@@ -8,6 +8,7 @@
   },
   "bugs": "https://github.com/scroll-tech/scroll-sdk-cli/issues",
   "dependencies": {
+    "@inquirer/prompts": "^5.3.8",
     "@kubernetes/client-node": "^0.21.0",
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",
@@ -15,6 +16,8 @@
     "cli-progress": "^3.12.0",
     "ethers": "^6.13.2",
     "js-yaml": "^4.1.0",
+    "qrcode": "^1.5.4",
+    "terminal-link": "^3.0.0",
     "toml": "^3.0.0"
   },
   "devDependencies": {
@@ -25,6 +28,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/mocha": "^10",
     "@types/node": "^18",
+    "@types/qrcode": "^1.5.5",
     "@types/sinon": "^17.0.3",
     "chai": "^4",
     "eslint": "^8",
