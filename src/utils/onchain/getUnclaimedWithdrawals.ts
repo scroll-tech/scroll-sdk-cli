@@ -1,4 +1,6 @@
-// Define the UnclaimedWithdrawal type
+/**
+ * Represents an unclaimed withdrawal.
+ */
 export type UnclaimedWithdrawal = {
 	hash: string;
 	messageHash: string;
@@ -13,7 +15,15 @@ export type UnclaimedWithdrawal = {
 	value: string;
 };
 
-export async function getUnclaimedWithdrawals(address: string, apiUri: string) {
+/**
+ * Retrieves unclaimed withdrawals for a given address.
+ * 
+ * @param address - The address to check for unclaimed withdrawals.
+ * @param apiUri - The URI of the API to query for unclaimed withdrawals.
+ * @returns A promise that resolves to an array of UnclaimedWithdrawal objects.
+ * @throws An error if the API request fails or returns an error.
+ */
+export async function getUnclaimedWithdrawals(address: string, apiUri: string): Promise<UnclaimedWithdrawal[]> {
 	let url = `${apiUri}/l2/unclaimed/withdrawals?address=${address}&page=1&page_size=100`;
 
 	try {
@@ -46,5 +56,4 @@ export async function getUnclaimedWithdrawals(address: string, apiUri: string) {
 		console.error('Error fetching unclaimed withdrawals:', error);
 		throw error;
 	}
-
 }

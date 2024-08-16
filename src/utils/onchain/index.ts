@@ -11,9 +11,14 @@ export { addressLink } from './addressLink.js'
 export { generateProvider } from './generateProvider.js'
 export { getUnclaimedWithdrawals } from './getUnclaimedWithdrawals.js'
 
-
+/**
+ * Represents a source for an RPC provider, which can be a JsonRpcProvider, a Wallet, or a string URL.
+ */
 export type RpcSource = JsonRpcProvider | Wallet | string;
 
+/**
+ * ABI for the L1 ETH Gateway contract.
+ */
 export const l1ETHGatewayABI = [
 	{
 		"inputs": [
@@ -35,6 +40,9 @@ export const l1ETHGatewayABI = [
 	}
 ];
 
+/**
+ * ABI for the L2 ETH Gateway contract.
+ */
 export const l2ETHGatewayABI = [
 	{
 		"inputs": [
@@ -54,5 +62,4 @@ export const l2ETHGatewayABI = [
 		"stateMutability": "payable",
 		"type": "function"
 	}
-
 ]
