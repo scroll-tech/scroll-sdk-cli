@@ -92,7 +92,6 @@ export async function getWithdrawals(address: string, apiUri: string): Promise<W
 
 		return withdrawals;
 	} catch (error) {
-		console.error('Error fetching unclaimed withdrawals:', error);
 		throw error;
 	}
 }

@@ -23,6 +23,7 @@ import {
   l1MessengerRelayMessageWithProofABI,
   scrollERC20ABI,
   txLink,
+  Withdrawal
 } from '../../utils/onchain/index.js'
 import { Wallet } from 'ethers'
 import chalk from 'chalk';
@@ -339,6 +340,8 @@ export default class TestE2e extends Command {
 
       this.logSection('Waiting for L1 ERC20 Deposit');
       await this.completeL1ERC20Deposit();
+      // Wait for a block...
+      await this.shortPause()
       await this.shortPause()
       await this.shortPause()
       await this.shortPause()
@@ -810,15 +813,20 @@ export default class TestE2e extends Command {
       let attempts = 0;
       const delay = 15000; // 15 seconds
 
+      this.logResult(`Getting token balance...`, 'info');
       while (balance === BigInt(0)) {
-        this.logResult(`Getting token balance...`, 'info');
-        balance = await erc20Contract.balanceOf(this.wallet.address);
-        if (balance > BigInt(0)) {
-          this.logResult(`Token balance found: ${balance.toString()}`, 'success');
-          break;
+        try {
+          balance = await erc20Contract.balanceOf(this.wallet.address);
+          if (balance > BigInt(0)) {
+            this.logResult(`Token balance found: ${balance.toString()}`, 'success');
+            break;
+          }
+
+          this.logResult(`Waiting for token balance...`, 'info');
+        } catch (error) {
+          this.logResult(`Error getting token balance: ${error instanceof Error ? error.message : 'Unknown error'}`, 'warning');
         }
         attempts++;
-        this.logResult(`Waiting for token balance...`, 'info');
         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
@@ -854,6 +862,7 @@ export default class TestE2e extends Command {
       // Implement claiming funds on L1
       this.logResult('Claiming funds on L1', 'info')
 
+      // TODO: Why is this not working?
       if (this.mockFinalizeEnabled) {
         this.logResult(`Config shows finalization timeout enabled at ${this.mockFinalizeTimeout} seconds. May need to wait...`)
       } else {
@@ -905,16 +914,24 @@ export default class TestE2e extends Command {
     try {
 
       let unclaimedWithdrawal;
+      let found = false
 
       while (!unclaimedWithdrawal?.claim_info) {
-        let withdrawals = await getWithdrawals(this.wallet.address, this.bridgeApiUrl);
+
+        let withdrawals: Withdrawal[] = [];
+
+        try {
+          withdrawals = await getWithdrawals(this.wallet.address, this.bridgeApiUrl);
+        } catch (error) {
+          this.logResult(`Warning: Failed to get withdrawals. Continuing... Error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'warning');
+        }
 
         // Check to see if the bridged tx is among unclaimed withdrawals if so, set withdrawalFound to true.
         for (const withdrawal of withdrawals) {
-          this.log(withdrawal.hash)
           if (withdrawal.hash === txHash) {
             unclaimedWithdrawal = withdrawal;
-            this.logResult(`Found matching withdrawal for transaction: ${txHash}`, 'success');
+            !found && this.logResult(`Found matching withdrawal for transaction: ${txHash}`, 'success');
+            found = true;
             break;
           }
         }
@@ -927,10 +944,10 @@ export default class TestE2e extends Command {
 
         if (!unclaimedWithdrawal) {
           this.logResult(`Withdrawal not found yet. Waiting...`, 'info');
-          await new Promise(resolve => setTimeout(resolve, 20000)); // Wait for 20 seconds before checking again
+          await new Promise(resolve => setTimeout(resolve, 60000)); // Wait for 20 seconds before checking again
         } else if (!unclaimedWithdrawal?.claim_info) {
           this.logResult(`Withdrawal seen, but waiting for finalization. Waiting...`, 'info');
-          await new Promise(resolve => setTimeout(resolve, 20000)); // Wait for 20 seconds before checking again
+          await new Promise(resolve => setTimeout(resolve, 60000)); // Wait for 20 seconds before checking again
         }
 
 

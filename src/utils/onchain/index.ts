@@ -13,6 +13,7 @@ export { getGasOracleL2BaseFee } from './getGasOracleL2BaseFee.js';
 export { getL2TokenFromL1Address } from './getL2TokenFromL1Address.js';
 export { getPendingQueueIndex } from './getPendingQueueIndex.js';
 export { getWithdrawals } from './getWithdrawals.js'
+export type { Withdrawal } from './getWithdrawals.js'
 export { txLink } from './txLink.js'
 
 /**
