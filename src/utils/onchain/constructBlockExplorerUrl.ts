@@ -6,7 +6,8 @@ import { generateProvider } from './generateProvider.js';
  */
 export enum LookupType {
   TX = "tx",
-  ADDRESS = "address"
+  ADDRESS = "address",
+  BLOCK = "block"
 }
 
 /**

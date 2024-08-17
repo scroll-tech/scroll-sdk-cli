@@ -1,4 +1,13 @@
-import { getFinalizedBlockHeight, getCrossDomainMessageFromTx, getPendingQueueIndex, getGasOracleL2BaseFee, awaitTx, txLink, getUnclaimedWithdrawals } from './utils/onchain/index.js';
+import {
+	getFinalizedBlockHeight,
+	getCrossDomainMessageFromTx,
+	getPendingQueueIndex,
+	getGasOracleL2BaseFee,
+	awaitTx,
+	txLink,
+	getWithdrawals
+} from './utils/onchain/index.js';
+import { getScrollERC20Balance } from './utils/onchain/getScrollERC20Balance.js';
 
 const EXTERNAL_RPC_URI_L1 = "https://alien-flashy-arm.ethereum-sepolia.quiknode.pro/2aeb75414e5ee0e930b64c2e7feff59efb537f30"
 const EXTERNAL_RPC_URI_L2 = "https://sepolia-rpc.scroll.io/"
@@ -70,12 +79,22 @@ async function testTxLink() {
 	}
 }
 
-async function testGetUnclaimedWithdrawals() {
+async function testGetWithdrawals() {
 	try {
-		const results = await getUnclaimedWithdrawals("0x98110937b5D6C5FCB0BA99480e585D2364e9809C", BRIDGE_API_URI)
+		const results = await getWithdrawals("0x98110937b5D6C5FCB0BA99480e585D2364e9809C", BRIDGE_API_URI)
 		console.log(results);
 	} catch (error) {
-		console.error('Error in testGetUnclaimedWithdrawals:', error);
+		console.error('Error in testGetWithdrawals:', error);
+	}
+
+}
+
+async function testGetScrollERC20Balance() {
+	try {
+		const results = await getScrollERC20Balance("0x98110937b5D6C5FCB0BA99480e585D2364e9809C", "0x92e717f0564811A79A8d3E8F3cF1D65Ca06d2FA0", EXTERNAL_RPC_URI_L2)
+		console.log(results);
+	} catch (error) {
+		console.error('Error in testGetWithdrawals:', error);
 	}
 
 }
@@ -90,7 +109,8 @@ async function main() {
 	await testGetGasOracleL2BaseFee();
 	await testAwaitTx();
 	await testTxLink();
-	await testGetUnclaimedWithdrawals();
+	await testGetWithdrawals();
+	await testGetScrollERC20Balance()
 	console.log('Test completed.');
 }
 
