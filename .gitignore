@@ -18,6 +18,7 @@ pnpm-lock.yaml
 !.yarn/versions
 
 charts
+.vscode
 
 
 
