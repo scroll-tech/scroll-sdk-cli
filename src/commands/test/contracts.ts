@@ -1,9 +1,10 @@
 import {Command, Flags} from '@oclif/core'
-import {ethers} from 'ethers'
-import {parseTomlConfig} from '../../utils/config-parser.js'
-import path from 'path'
 import cliProgress from 'cli-progress'
-import {L1Contracts, L2Contracts, DeployedContract} from '../../data/contracts.js'
+import {ethers} from 'ethers'
+import path from 'node:path'
+
+import {DeployedContract, L1Contracts, L2Contracts} from '../../data/contracts.js'
+import {parseTomlConfig} from '../../utils/config-parser.js'
 
 interface ContractsConfig {
   [key: string]: string
@@ -15,18 +16,18 @@ export default class TestContracts extends Command {
   static flags = {
     config: Flags.string({
       char: 'c',
-      description: 'Path to config.toml file',
       default: './config.toml',
+      description: 'Path to config.toml file',
     }),
     contracts: Flags.string({
       char: 't',
-      description: 'Path to configs-contracts.toml file',
       default: './config-contracts.toml',
+      description: 'Path to configs-contracts.toml file',
     }),
     pod: Flags.boolean({
       char: 'p',
-      description: 'Run inside Kubernetes pod',
       default: false,
+      description: 'Run inside Kubernetes pod',
     }),
   }
 
@@ -82,6 +83,7 @@ export default class TestContracts extends Command {
       if (!address) {
         this.log(`Missing address for contract: ${contract.name}`)
       }
+
       return {...contract, address}
     }).filter((address) => address !== undefined)
 
@@ -90,6 +92,7 @@ export default class TestContracts extends Command {
       if (!address) {
         this.log(`Missing address for contract: ${contract.name}`)
       }
+
       return {...contract, address}
     }).filter((address) => address !== undefined)
 
@@ -99,14 +102,14 @@ export default class TestContracts extends Command {
       const multibarDeployment = new cliProgress.MultiBar(
         {
           clearOnComplete: false,
-          hideCursor: true,
           format: ' {bar} | {percentage}% | {value}/{total} | {name}',
+          hideCursor: true,
         },
         cliProgress.Presets.shades_classic,
       )
 
-      let l1BarDeploy = multibarDeployment.create(l1Addresses.length, 0, {name: 'Checking L1 contract deployment...'})
-      let l2BarDeploy = multibarDeployment.create(l2Addresses.length, 0, {name: 'Checking L2 contract deployment...'})
+      const l1BarDeploy = multibarDeployment.create(l1Addresses.length, 0, {name: 'Checking L1 contract deployment...'})
+      const l2BarDeploy = multibarDeployment.create(l2Addresses.length, 0, {name: 'Checking L2 contract deployment...'})
 
       const notDeployed: DeployedContract[] = []
 
@@ -120,8 +123,8 @@ export default class TestContracts extends Command {
       const multibarInitialization = new cliProgress.MultiBar(
         {
           clearOnComplete: false,
-          hideCursor: true,
           format: ' {bar} | {percentage}% | {value}/{total} | {name}',
+          hideCursor: true,
         },
         cliProgress.Presets.shades_classic,
       )
@@ -152,8 +155,8 @@ export default class TestContracts extends Command {
       const multibarOwner = new cliProgress.MultiBar(
         {
           clearOnComplete: false,
-          hideCursor: true,
           format: ' {bar} | {percentage}% | {value}/{total} | {name}',
+          hideCursor: true,
         },
         cliProgress.Presets.shades_classic,
       )
@@ -193,26 +196,26 @@ export default class TestContracts extends Command {
       )
 
       this.log('\nCorrectly configured contracts:')
-      correctlyConfigured.forEach((contract) => {
+      for (const contract of correctlyConfigured) {
         let status = 'Deployed'
         if (contract.initializes) status += ', Initialized'
         if (contract.owned) status += ', Correctly Owned'
         this.log(`- ${contract.name} (${contract.address}): ${status}`)
-      })
+      }
 
       if (notDeployed.length > 0) {
         this.log('\nContracts not deployed:')
-        notDeployed.forEach((contract) => this.log(`- ${contract.name} (${contract.address})`))
+        for (const contract of notDeployed) this.log(`- ${contract.name} (${contract.address})`)
       }
 
       if (notInitialized.length > 0) {
         this.log('\nContracts not initialized:')
-        notInitialized.forEach((contract) => this.log(`- ${contract.name} (${contract.address})`))
+        for (const contract of notInitialized) this.log(`- ${contract.name} (${contract.address})`)
       }
 
       if (notOwned.length > 0) {
         this.log('\nContracts without correct owner:')
-        notInitialized.forEach((contract) => this.log(`- ${contract.name} (${contract.address})`))
+        for (const contract of notInitialized) this.log(`- ${contract.name} (${contract.address})`)
       }
 
       if (notDeployed.length === 0 && notInitialized.length === 0 && notOwned.length === 0) {
@@ -250,7 +253,7 @@ export default class TestContracts extends Command {
       progressBar.update({name: `Checking ${c.name}...`})
       try {
         const initCount = await provider.getStorage(c?.address || '', 0)
-        if (parseInt(initCount) > 0) {
+        if (Number.parseInt(initCount) > 0) {
           notInitialized.push(c)
         }
       } catch (error) {
@@ -283,6 +286,7 @@ export default class TestContracts extends Command {
           this.error(`Error checking owner for ${c.name}: ${error}`)
         }
       }
+
       progressBar.increment()
     }
   }
