@@ -260,6 +260,7 @@ export default class TestE2e extends Command {
 
       if (flags.skip_wallet_generation) {
         this.wallet = new ethers.Wallet(flags.private_key ?? config.accounts.DEPLOYER_PRIVATE_KEY)
+        this.results.fundWalletOnL1.walletAddress = this.wallet.address
         this.logResult(`Skipping wallet generation, using: ${this.wallet.address}`)
       } else if (flags.private_key) {
         this.fundingWallet = new ethers.Wallet(flags.private_key, this.l1Provider)
