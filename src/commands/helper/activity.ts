@@ -1,13 +1,14 @@
-import {Command, Flags} from '@oclif/core'
+import { Command, Flags } from '@oclif/core'
 import chalk from 'chalk'
-import {ethers} from 'ethers'
+import { ethers } from 'ethers'
 import path from 'node:path'
 
-import {parseTomlConfig} from '../../utils/config-parser.js'
+import { parseTomlConfig } from '../../utils/config-parser.js'
 
 enum Layer {
   L1 = 'l1',
   L2 = 'l2',
+  RPC = 'rpc'
 }
 
 export default class HelperActivity extends Command {
@@ -32,6 +33,7 @@ export default class HelperActivity extends Command {
     layer2: Flags.boolean({
       char: 't',
       default: true,
+      allowNo: true,
       description: 'Generate activity on Layer 2',
     }),
     pod: Flags.boolean({
@@ -54,24 +56,30 @@ export default class HelperActivity extends Command {
   }
 
   public async run(): Promise<void> {
-    const {flags} = await this.parse(HelperActivity)
+    const { flags } = await this.parse(HelperActivity)
 
     const configPath = path.resolve(flags.config)
     const config = parseTomlConfig(configPath)
 
     const privateKey = flags.privateKey ?? config.accounts.DEPLOYER_PRIVATE_KEY
-    const recipientAddr = flags.recipient ?? config.accounts.DEPLOYER_ADDR
 
-    if (!privateKey || !recipientAddr) {
+    if (!privateKey) {
       this.error('Missing required configuration. Please check your config file or provide flags.')
     }
 
+    const publicKey = new ethers.Wallet(privateKey).address
+    const recipientAddr = flags.recipient ?? publicKey
+
     const layers: Layer[] = []
-    if (flags.layer1) layers.push(Layer.L1)
-    if (flags.layer2) layers.push(Layer.L2)
+    if (!flags.rpc) {
+      if (flags.layer1) layers.push(Layer.L1)
+      if (flags.layer2) layers.push(Layer.L2)
+    } else {
+      layers.push(Layer.RPC)
+    }
 
     if (layers.length === 0) {
-      this.error('At least one layer must be selected. Use --layer1 or --layer2 flags.')
+      this.error('At least one layer must be selected. Use --layer1 --layer2 or --rpc flags.')
     }
 
     const providers: Record<Layer, ethers.JsonRpcProvider> = {} as Record<Layer, ethers.JsonRpcProvider>
@@ -79,7 +87,7 @@ export default class HelperActivity extends Command {
 
     for (const layer of layers) {
       let rpcUrl: string
-      if (flags.rpc) {
+      if (layer === Layer.RPC && flags.rpc) {
         rpcUrl = flags.rpc
       } else if (flags.pod) {
         rpcUrl = layer === Layer.L1 ? config.general.L1_RPC_ENDPOINT : config.general.L2_RPC_ENDPOINT
@@ -91,8 +99,10 @@ export default class HelperActivity extends Command {
         this.error(`Missing RPC URL for ${layer.toUpperCase()}. Please check your config file or provide --rpc flag.`)
       }
 
-      providers[layer] = new ethers.JsonRpcProvider(rpcUrl)
-      wallets[layer] = new ethers.Wallet(privateKey, providers[layer])
+      // providers[layer] = new ethers.JsonRpcProvider(rpcUrl)
+      wallets[layer] = new ethers.Wallet(privateKey, new ethers.JsonRpcProvider(rpcUrl))
+
+      this.log(rpcUrl)
     }
 
     this.log(
@@ -100,17 +110,25 @@ export default class HelperActivity extends Command {
         `Starting activity generation on ${layers.map((l) => l.toUpperCase()).join(' and ')}. Press Ctrl+C to stop.`,
       ),
     )
+    this.log(
+      chalk.magenta(
+        `Sender: ${publicKey} | Recipient: ${recipientAddr}`,
+      ),
+    )
 
     // eslint-disable-next-line no-constant-condition
-    while (true) {
-      for (const layer of layers) {
-        // eslint-disable-next-line no-await-in-loop
-        await this.sendTransaction(wallets[layer], recipientAddr, layer)
+    layers.map(async (layer) => {
+      while (true) {
+        for (const layer of layers) {
+          // eslint-disable-next-line no-await-in-loop
+          await this.sendTransaction(wallets[layer], recipientAddr, layer)
+        }
+
+        // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
+        await new Promise((resolve) => setTimeout(resolve, flags.interval * 1000))
       }
 
-      // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
-      await new Promise((resolve) => setTimeout(resolve, flags.interval * 1000))
-    }
+    })
   }
 
   private async sendTransaction(wallet: ethers.Wallet, recipient: string, layer: Layer) {
@@ -124,8 +142,7 @@ export default class HelperActivity extends Command {
     } catch (error) {
       this.log(
         chalk.red(
-          `Failed to send ${layer.toUpperCase()} transaction: ${
-            error instanceof Error ? error.message : 'Unknown error'
+          `Failed to send ${layer.toUpperCase()} transaction: ${error instanceof Error ? error.message : 'Unknown error'
           }`,
         ),
       )
