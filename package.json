@@ -69,8 +69,11 @@
     ],
     "topicSeparator": " ",
     "topics": {
-      "hello": {
-        "description": "Say hello to the world and others"
+      "helper": {
+        "description": "Useful tools for setting up and interacting with your chain"
+      },
+      "test": {
+        "description": "Test your chain configuration and setup"
       }
     }
   },

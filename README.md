@@ -32,6 +32,8 @@ USAGE
 * [`scrollsdk hello PERSON`](#scrollsdk-hello-person)
 * [`scrollsdk hello world`](#scrollsdk-hello-world)
 * [`scrollsdk help [COMMAND]`](#scrollsdk-help-command)
+* [`scrollsdk helper activity`](#scrollsdk-helper-activity)
+* [`scrollsdk helper fund-devnet`](#scrollsdk-helper-fund-devnet)
 * [`scrollsdk plugins`](#scrollsdk-plugins)
 * [`scrollsdk plugins add PLUGIN`](#scrollsdk-plugins-add-plugin)
 * [`scrollsdk plugins:inspect PLUGIN...`](#scrollsdk-pluginsinspect-plugin)
@@ -42,6 +44,10 @@ USAGE
 * [`scrollsdk plugins uninstall [PLUGIN]`](#scrollsdk-plugins-uninstall-plugin)
 * [`scrollsdk plugins unlink [PLUGIN]`](#scrollsdk-plugins-unlink-plugin)
 * [`scrollsdk plugins update`](#scrollsdk-plugins-update)
+* [`scrollsdk test contracts`](#scrollsdk-test-contracts)
+* [`scrollsdk test dependencies`](#scrollsdk-test-dependencies)
+* [`scrollsdk test e2e`](#scrollsdk-test-e2e)
+* [`scrollsdk test ingress`](#scrollsdk-test-ingress)
 
 ## `scrollsdk hello PERSON`
 
@@ -104,6 +110,49 @@ DESCRIPTION
 ```
 
 _See code: [@oclif/plugin-help](https://github.com/oclif/plugin-help/blob/v6.2.8/src/commands/help.ts)_
+
+## `scrollsdk helper activity`
+
+Generate transactions on the specified network(s) to produce more blocks
+
+```
+USAGE
+  $ scrollsdk helper activity [-c <value>] [-i <value>] [-o] [-t] [-p] [-k <value>] [-x <value>] [-r <value>]
+
+FLAGS
+  -c, --config=<value>      [default: ./config.toml] Path to config.toml file
+  -i, --interval=<value>    [default: 5] Interval between transactions in seconds
+  -k, --privateKey=<value>  Private key (overrides config)
+  -o, --layer1              Generate activity on Layer 1
+  -p, --pod                 Run inside Kubernetes pod
+  -r, --rpc=<value>         RPC URL (overrides config for both layers)
+  -t, --[no-]layer2         Generate activity on Layer 2
+  -x, --recipient=<value>   Recipient address (overrides config)
+
+DESCRIPTION
+  Generate transactions on the specified network(s) to produce more blocks
+```
+
+_See code: [src/commands/helper/activity.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.0/src/commands/helper/activity.ts)_
+
+## `scrollsdk helper fund-devnet`
+
+Fund default L1 accounts when using an Anvil devnet
+
+```
+USAGE
+  $ scrollsdk helper fund-devnet [-a <value>] [-c <value>] [-r <value>]
+
+FLAGS
+  -a, --account=<value>  Additional account to fund
+  -c, --config=<value>   [default: ./config.toml] Path to config.toml file
+  -r, --rpc=<value>      L1 RPC URL
+
+DESCRIPTION
+  Fund default L1 accounts when using an Anvil devnet
+```
+
+_See code: [src/commands/helper/fund-devnet.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.0/src/commands/helper/fund-devnet.ts)_
 
 ## `scrollsdk plugins`
 
@@ -393,4 +442,82 @@ DESCRIPTION
 ```
 
 _See code: [@oclif/plugin-plugins](https://github.com/oclif/plugin-plugins/blob/v5.4.4/src/commands/plugins/update.ts)_
+
+## `scrollsdk test contracts`
+
+Test contracts by checking deployment and initialization
+
+```
+USAGE
+  $ scrollsdk test contracts [-c <value>] [-t <value>] [-p]
+
+FLAGS
+  -c, --config=<value>     [default: ./config.toml] Path to config.toml file
+  -p, --pod                Run inside Kubernetes pod
+  -t, --contracts=<value>  [default: ./config-contracts.toml] Path to configs-contracts.toml file
+
+DESCRIPTION
+  Test contracts by checking deployment and initialization
+```
+
+_See code: [src/commands/test/contracts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.0/src/commands/test/contracts.ts)_
+
+## `scrollsdk test dependencies`
+
+Check for required dependencies
+
+```
+USAGE
+  $ scrollsdk test dependencies [-d]
+
+FLAGS
+  -d, --dev  Include development dependencies
+
+DESCRIPTION
+  Check for required dependencies
+```
+
+_See code: [src/commands/test/dependencies.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.0/src/commands/test/dependencies.ts)_
+
+## `scrollsdk test e2e`
+
+Test contracts by checking deployment and initialization
+
+```
+USAGE
+  $ scrollsdk test e2e [-c <value>] [-t <value>] [-m] [-p] [-k <value>] [-r] [-s]
+
+FLAGS
+  -c, --config=<value>          [default: ./config.toml] Path to config.toml file
+  -k, --private_key=<value>     Private key for funder wallet initialization
+  -m, --manual_fund             Manually fund the test wallet.
+  -p, --pod                     Run inside Kubernetes pod
+  -r, --resume                  Uses e2e_resume.json to continue last run.
+  -s, --skip_wallet_generation  Manually fund the test wallet.
+  -t, --contracts=<value>       [default: ./config-contracts.toml] Path to configs-contracts.toml file
+
+DESCRIPTION
+  Test contracts by checking deployment and initialization
+```
+
+_See code: [src/commands/test/e2e.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.0/src/commands/test/e2e.ts)_
+
+## `scrollsdk test ingress`
+
+Check for required ingress hosts
+
+```
+USAGE
+  $ scrollsdk test ingress [-c <value>] [-d] [-n <value>]
+
+FLAGS
+  -c, --config=<value>     Path to config.toml file
+  -d, --dev                Include development ingresses
+  -n, --namespace=<value>  [default: default] Kubernetes namespace
+
+DESCRIPTION
+  Check for required ingress hosts
+```
+
+_See code: [src/commands/test/ingress.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.0/src/commands/test/ingress.ts)_
 <!-- commandsstop -->
