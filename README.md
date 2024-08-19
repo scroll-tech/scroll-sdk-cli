@@ -20,7 +20,7 @@ $ npm install -g scroll-sdk-cli
 $ scrollsdk COMMAND
 running command...
 $ scrollsdk (--version)
-scroll-sdk-cli/0.0.1-0 linux-x64 node-v20.11.0
+scroll-sdk-cli/0.0.2-0 linux-x64 node-v20.11.0
 $ scrollsdk --help [COMMAND]
 USAGE
   $ scrollsdk COMMAND
@@ -89,7 +89,7 @@ DESCRIPTION
   Generate transactions on the specified network(s) to produce more blocks
 ```
 
-_See code: [src/commands/helper/activity.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.1-0/src/commands/helper/activity.ts)_
+_See code: [src/commands/helper/activity.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.2-0/src/commands/helper/activity.ts)_
 
 ## `scrollsdk helper fund-devnet`
 
@@ -108,7 +108,7 @@ DESCRIPTION
   Fund default L1 accounts when using an Anvil devnet
 ```
 
-_See code: [src/commands/helper/fund-devnet.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.1-0/src/commands/helper/fund-devnet.ts)_
+_See code: [src/commands/helper/fund-devnet.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.2-0/src/commands/helper/fund-devnet.ts)_
 
 ## `scrollsdk plugins`
 
@@ -416,7 +416,7 @@ DESCRIPTION
   Test contracts by checking deployment and initialization
 ```
 
-_See code: [src/commands/test/contracts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.1-0/src/commands/test/contracts.ts)_
+_See code: [src/commands/test/contracts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.2-0/src/commands/test/contracts.ts)_
 
 ## `scrollsdk test dependencies`
 
@@ -433,7 +433,7 @@ DESCRIPTION
   Check for required dependencies
 ```
 
-_See code: [src/commands/test/dependencies.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.1-0/src/commands/test/dependencies.ts)_
+_See code: [src/commands/test/dependencies.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.2-0/src/commands/test/dependencies.ts)_
 
 ## `scrollsdk test e2e`
 
@@ -456,7 +456,7 @@ DESCRIPTION
   Test contracts by checking deployment and initialization
 ```
 
-_See code: [src/commands/test/e2e.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.1-0/src/commands/test/e2e.ts)_
+_See code: [src/commands/test/e2e.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.2-0/src/commands/test/e2e.ts)_
 
 ## `scrollsdk test ingress`
 
@@ -475,5 +475,5 @@ DESCRIPTION
   Check for required ingress hosts
 ```
 
-_See code: [src/commands/test/ingress.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.1-0/src/commands/test/ingress.ts)_
+_See code: [src/commands/test/ingress.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.2-0/src/commands/test/ingress.ts)_
 <!-- commandsstop -->
