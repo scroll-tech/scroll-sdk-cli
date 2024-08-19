@@ -252,7 +252,7 @@ export default class TestE2e extends Command {
       this.l1Messenger = contractsConfig.L1_SCROLL_MESSENGER_PROXY_ADDR
       this.mockFinalizeEnabled = config?.general.TEST_ENV_MOCK_FINALIZE_ENABLED === 'true'
       this.mockFinalizeTimeout = config?.general.TEST_ENV_MOCK_FINALIZE_TIMEOUT_SEC ?? 0
-      this.bridgeApiUrl = config?.frontend.BRIDGE_API_URI
+      // TODO: make this work for pod mode
       this.bridgeApiUrl = config?.frontend.BRIDGE_API_URI
 
       this.l1Provider = new ethers.JsonRpcProvider(l1RpcUrl)
