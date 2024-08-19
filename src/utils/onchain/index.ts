@@ -1,6 +1,7 @@
 import { JsonRpcProvider, Wallet } from 'ethers';
 export { addressLink } from './addressLink.js'
 export { awaitTx } from './awaitTx.js';
+export { awaitERC20Balance } from './awaitERC20Balance.js'
 export { blockLink } from './blockLink.js'
 export { constructBlockExplorerUrl, LookupType } from './constructBlockExplorerUrl.js';
 export type { BlockExplorerParams } from './constructBlockExplorerUrl.js';

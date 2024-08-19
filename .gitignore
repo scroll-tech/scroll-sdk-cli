@@ -18,7 +18,9 @@ pnpm-lock.yaml
 !.yarn/versions
 
 charts
+config*
 .vscode
 
+e2e_resume*
 
 

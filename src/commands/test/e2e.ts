@@ -1,17 +1,19 @@
-import {Separator, confirm, select} from '@inquirer/prompts'
-import {Args, Command, Flags} from '@oclif/core'
+import { Separator, confirm, select } from '@inquirer/prompts'
+import { Args, Command, Flags } from '@oclif/core'
 import chalk from 'chalk'
-import {Wallet, ethers} from 'ethers'
+import { Wallet, ethers } from 'ethers'
 import path from 'node:path'
 import ora from 'ora'
 import QRCode from 'qrcode'
+import fs from 'fs/promises'
 
-import {parseTomlConfig} from '../../utils/config-parser.js'
+import { parseTomlConfig } from '../../utils/config-parser.js'
 import {
   BlockExplorerParams,
   Withdrawal,
   addressLink,
   awaitTx,
+  awaitERC20Balance,
   blockLink,
   erc20ABI,
   erc20Bytecode,
@@ -91,19 +93,24 @@ export default class TestE2e extends Command {
       default: './config-contracts.toml',
       description: 'Path to configs-contracts.toml file',
     }),
-    manual_fund: Flags.boolean({char: 'm', description: 'Manually fund the test wallet.'}),
+    manual_fund: Flags.boolean({ char: 'm', description: 'Manually fund the test wallet.' }),
     pod: Flags.boolean({
       char: 'p',
       default: false,
       description: 'Run inside Kubernetes pod',
     }),
-    private_key: Flags.string({char: 'k', description: 'Private key for funder wallet initialization'}),
-    skip_wallet_generation: Flags.boolean({char: 's', description: 'Manually fund the test wallet.'}),
+    private_key: Flags.string({ char: 'k', description: 'Private key for funder wallet initialization' }),
+    skip_wallet_generation: Flags.boolean({ char: 's', description: 'Manually fund the test wallet.' }),
+    resume: Flags.boolean({
+      char: 'r',
+      description: 'Uses e2e_resume.json to continue last run.',
+      default: false,
+    }),
   }
 
   private blockExplorers: Record<Layer, BlockExplorerParams> = {
-    [Layer.L1]: {blockExplorerURI: ''},
-    [Layer.L2]: {blockExplorerURI: ''},
+    [Layer.L1]: { blockExplorerURI: '' },
+    [Layer.L2]: { blockExplorerURI: '' },
   }
 
   private bridgeApiUrl!: string
@@ -164,30 +171,34 @@ export default class TestE2e extends Command {
     }
     fundWalletOnL1: {
       complete: boolean
+      walletAddress?: string
+      generatedPrivateKey?: string //should never store user provided key
     }
     fundWalletOnL2: {
       complete: boolean
     }
   } = {
-    bridgeERC20L1ToL2: {complete: false},
-    bridgeERC20L2ToL1: {complete: false},
-    bridgeFundsL1ToL2: {complete: false},
-    bridgeFundsL2ToL1: {complete: false},
-    claimERC20OnL1: {complete: false},
-    claimETHOnL1: {complete: false},
-    deployERC20OnL1: {complete: false},
-    deployERC20OnL2: {complete: false},
-    fundWalletOnL1: {complete: false},
-    fundWalletOnL2: {complete: false},
-  }
+      bridgeERC20L1ToL2: { complete: false },
+      bridgeERC20L2ToL1: { complete: false },
+      bridgeFundsL1ToL2: { complete: false },
+      bridgeFundsL2ToL1: { complete: false },
+      claimERC20OnL1: { complete: false },
+      claimETHOnL1: { complete: false },
+      deployERC20OnL1: { complete: false },
+      deployERC20OnL2: { complete: false },
+      fundWalletOnL1: { complete: false },
+      fundWalletOnL2: { complete: false },
+    }
 
   private skipWalletGen: boolean = false
 
   private wallet!: ethers.Wallet
 
+  private resumeFilePath: string | undefined
+
   public async run(): Promise<void> {
     try {
-      const {flags} = await this.parse(TestE2e)
+      const { flags } = await this.parse(TestE2e)
 
       const configPath = path.resolve(flags.config)
       const contractsPath = path.resolve(flags.contracts)
@@ -261,17 +272,19 @@ export default class TestE2e extends Command {
         this.logResult('No Deploy private key found or provided. (Will prompt to fund L1 address manually.)')
       }
 
+      // Handle resume flag
+      if (flags.resume) {
+        // we may want a custom resume file in future
+        this.resumeFilePath = 'e2e_resume.json'
+        await this.loadResumeFile()
+        if (this.results.fundWalletOnL1.generatedPrivateKey) {
+          this.generateNewWallet(this.results.fundWalletOnL1.generatedPrivateKey)
+        }
+      }
+
       await this.runE2ETest()
     } catch (error) {
-      if (error instanceof ConfigurationError) {
-        this.error(`Configuration error: ${error.message}`)
-      } else if (error instanceof NetworkError) {
-        this.error(`Network error: ${error.message}`)
-      } else if (error instanceof Error) {
-        this.error(`Unexpected error: ${error.message}`)
-      } else {
-        this.error(`An unknown error occurred`)
-      }
+      this.handleError(error)
     }
   }
 
@@ -318,9 +331,12 @@ export default class TestE2e extends Command {
         this.wallet.connect(this.l1Provider),
       )
 
+      // Gas cost for initial ERC20 bridging
+      const erc20GasLimitGatewayRouter = 450_000;
+
       // Call depositERC20
-      const depositTx = await l1GatewayRouter.depositERC20(erc20Address, halfBalance, 200_000, {
-        value: ethers.parseEther('0.0005'),
+      const depositTx = await l1GatewayRouter.depositERC20(erc20Address, halfBalance, erc20GasLimitGatewayRouter, {
+        value: ethers.parseEther('0.001'),
       })
       // TODO: figure out value here
       await depositTx.wait()
@@ -329,7 +345,7 @@ export default class TestE2e extends Command {
 
       // Get L2TokenAddress from L1 Contract Address
       const l2TokenAddress = await getL2TokenFromL1Address(erc20Address, this.l1Rpc, this.l1GatewayRouter)
-      const {l2TxHash, queueIndex} = await getCrossDomainMessageFromTx(
+      const { l2TxHash, queueIndex } = await getCrossDomainMessageFromTx(
         depositTx.hash,
         this.l1Rpc,
         this.l1MessegeQueueProxyAddress,
@@ -347,37 +363,6 @@ export default class TestE2e extends Command {
         queueIndex,
       }
 
-      // let isFinalized = false;
-      // while (!isFinalized) {
-
-      //   const finalizedBlockNumber = await getFinalizedBlockHeight(this.l1Rpc);
-
-      //   if (blockNumber >= finalizedBlockNumber) {
-      //     isFinalized = true;
-      //     this.logResult(`Block ${blockNumber} is finalized. Bridging should be completed soon.`, 'success');
-      //   } else {
-      //     // TODO: This doesn't work on Sepolia? Look into it.
-      //     this.logResult(`Waiting for block ${blockNumber} to be finalized, current height is ${finalizedBlockNumber}`, 'info');
-      //   }
-
-      //   const queueHeight = await getPendingQueueIndex(this.l1Rpc, this.l1MessegeQueueProxyAddress);
-
-      //   this.logResult(`Current bridge queue position is ${queueHeight}, pending tx is position ${queueIndex}`, 'info')
-
-      //   await new Promise(resolve => setTimeout(resolve, 20000)); // Wait for 10 seconds -- todo, communicate this better and detect better
-      // }
-
-      // // Now that the block is finalized, check L2 for the l2TxHash every 20 seconds.
-      // const l2TxLink = await txLink(l2TxHash, { rpc: this.l2Provider })
-
-      // this.logResult(`Waiting for ${chalk.cyan(l2TxLink)}...`, 'info')
-      // const l2TxReceipt = await awaitTx(l2TxHash, this.l2Provider)
-
-      // this.log(`${chalk.gray(JSON.stringify(l2TxReceipt, null, 2))}`)
-
-      // this.logResult('Bridging funds from L1 to L2 completed', 'success');
-
-      // this.results.bridgeERC20L1ToL2.complete = true;
     } catch (error) {
       throw new BridgingError(
         `Error bridging ERC20 from L1 to L2: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -396,36 +381,41 @@ export default class TestE2e extends Command {
         throw new Error('ERC20 address not found. Make sure deployERC20OnL1 was successful.')
       }
 
-      const erc20Contract = new ethers.Contract(erc20Address, scrollERC20ABI, this.wallet.connect(this.l2Provider))
+      this.log(JSON.stringify({ wallet: this.wallet.address, erc20Address, rpc: this.l2Rpc }))
 
-      let balance = BigInt(0)
-      let attempts = 0
-      const delay = 15_000 // 15 seconds
+      const balance = await awaitERC20Balance(this.wallet.address, erc20Address, this.l2Rpc);
 
-      this.logResult(`Getting token balance...`, 'info')
-      while (balance === BigInt(0)) {
-        try {
-          balance = await erc20Contract.balanceOf(this.wallet.address)
-          if (balance > BigInt(0)) {
-            this.logResult(`Token balance found: ${balance.toString()}`, 'success')
-            break
-          }
 
-          this.logResult(`Waiting for token balance...`, 'info')
-        } catch (error) {
-          this.logResult(
-            `Error getting token balance: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            'warning',
-          )
-        }
+      // let balance = BigInt(0)
+      // let attempts = 0
+      // const delay = 15_000 // 15 seconds
 
-        attempts++
-        await new Promise((resolve) => setTimeout(resolve, delay))
-      }
+      // this.logResult(`Getting token balance...`, 'info')
+      // while (balance === BigInt(0)) {
+      //   try {
+      //     balance = await erc20Contract.balanceOf(this.wallet.address)
+      //     if (balance > BigInt(0)) {
+      //       this.logResult(`Token balance found: ${balance.toString()}`, 'success')
+      //       break
+      //     }
 
-      const halfBalance = balance / 2n
+      //     this.logResult(`Waiting for token balance...`, 'info')
+      //   } catch (error) {
+      //     this.logResult(
+      //       `Error getting token balance: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      //       'warning',
+      //     )
+      //   }
+
+      //   attempts++
+      //   await new Promise((resolve) => setTimeout(resolve, delay))
+      // }
+
+
+      const halfBalance = BigInt(Number.parseInt(balance)) / 2n
 
       // Set allowance for l2GatewayRouter
+      const erc20Contract = new ethers.Contract(erc20Address, scrollERC20ABI, this.wallet.connect(this.l2Provider))
       const approvalTx = await erc20Contract.approve(this.l2GatewayRouter, halfBalance)
       await approvalTx.wait()
 
@@ -439,7 +429,7 @@ export default class TestE2e extends Command {
       )
 
       // Call withdrawERC20
-      const withdrawTx = await l2GatewayRouter.withdrawERC20(erc20Address, halfBalance, 0, {value: 0})
+      const withdrawTx = await l2GatewayRouter.withdrawERC20(erc20Address, halfBalance, 0, { value: 0 })
       const receipt = await withdrawTx.wait()
 
       this.logResult(`Withdrawal transaction sent: ${withdrawTx.hash}`, 'success')
@@ -447,6 +437,7 @@ export default class TestE2e extends Command {
         complete: true,
         l2WithdrawTx: withdrawTx.hash,
       }
+
     } catch (error) {
       throw new BridgingError(
         `Error bridging ERC20 from L2 to L1: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -472,7 +463,7 @@ export default class TestE2e extends Command {
       // const value = amount + ethers.parseEther(`${gasLimit*l2BaseFee} wei`);
       await this.logAddress(await l1ETHGateway.getAddress(), `Depositing ${amount} by sending ${value} to`, Layer.L1)
 
-      const tx = await l1ETHGateway.depositETH(amount, gasLimit, {value})
+      const tx = await l1ETHGateway.depositETH(amount, gasLimit, { value })
 
       await this.logTx(tx.hash, 'Transaction sent', Layer.L1)
       const receipt = await tx.wait()
@@ -480,7 +471,7 @@ export default class TestE2e extends Command {
 
       this.logResult(`Transaction mined in block: ${chalk.cyan(blockNumber)}`, 'success')
 
-      const {l2TxHash, queueIndex} = await getCrossDomainMessageFromTx(
+      const { l2TxHash, queueIndex } = await getCrossDomainMessageFromTx(
         tx.hash,
         this.l1Rpc,
         this.l1MessegeQueueProxyAddress,
@@ -493,37 +484,6 @@ export default class TestE2e extends Command {
         queueIndex,
       }
 
-      // await this.logTx(l2TxHash, 'Waiting for the following tx on L2', Layer.L2);
-
-      // let isFinalized = false;
-      // while (!isFinalized) {
-
-      //   const finalizedBlockNumber = await getFinalizedBlockHeight(this.l1Rpc);
-
-      //   if (blockNumber >= finalizedBlockNumber) {
-      //     isFinalized = true;
-      //     this.logResult(`Block ${blockNumber} is finalized. Bridging should be completed soon.`, 'success');
-      //   } else {
-      //     // TODO: This doesn't work on Sepolia? Look into it.
-      //     this.logResult(`Waiting for block ${blockNumber} to be finalized, current height is ${finalizedBlockNumber}`, 'info');
-      //   }
-
-      //   const queueHeight = await getPendingQueueIndex(this.l1Rpc, this.l1MessegeQueueProxyAddress);
-
-      //   this.logResult(`Current bridge queue position is ${queueHeight}, pending tx is position ${queueIndex}`, 'info')
-
-      //   await new Promise(resolve => setTimeout(resolve, 20000)); // Wait for 10 seconds -- todo, communicate this better and detect better
-      // }
-
-      // // Now that the block is finalized, check L2 for the l2TxHash every 20 seconds.
-      // const l2TxLink = await txLink(l2TxHash, { rpc: this.l2Provider })
-
-      // this.logResult(`Waiting for ${chalk.cyan(l2TxLink)}...`, 'info')
-      // const l2TxReceipt = await awaitTx(l2TxHash, this.l2Provider)
-
-      // this.log(`${chalk.gray(JSON.stringify(l2TxReceipt, null, 2))}`)
-
-      // this.logResult('Bridging funds from L1 to L2 completed', 'success');
     } catch (error) {
       throw new BridgingError(
         `Error bridging funds from L1 to L2: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -546,7 +506,7 @@ export default class TestE2e extends Command {
       // const value = amount + ethers.parseEther(`${gasLimit*l2BaseFee} wei`);
       await this.logAddress(await l2ETHGateway.getAddress(), `Withdrawing ${amount} by sending ${value} to`, Layer.L2)
 
-      const tx = await l2ETHGateway.withdrawETH(amount, 0, {value})
+      const tx = await l2ETHGateway.withdrawETH(amount, 0, { value })
       this.results.bridgeFundsL2ToL1.l2WithdrawTx = tx.hash
 
       await this.logTx(tx.hash, 'Transaction sent', Layer.L2)
@@ -556,6 +516,7 @@ export default class TestE2e extends Command {
       this.logResult(`Transaction mined in block: ${chalk.cyan(blockNumber)}`, 'success')
 
       this.results.bridgeFundsL2ToL1.complete = true
+
     } catch (error) {
       throw new BridgingError(
         `Error bridging funds from L2 to L1: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -584,6 +545,7 @@ export default class TestE2e extends Command {
 
       this.results.claimERC20OnL1.complete = true
       this.results.claimERC20OnL1.l1ClaimTx = txHash
+
     } catch (error) {
       throw new Error(`Error claiming ERC20 on L1: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
@@ -611,6 +573,7 @@ export default class TestE2e extends Command {
 
       this.results.claimETHOnL1.complete = true
       this.results.claimETHOnL1.l1ClaimTx = txHash
+
     } catch (error) {
       throw new Error(`Error claiming funds on L1: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
@@ -641,6 +604,7 @@ export default class TestE2e extends Command {
         spinner.fail('Failed to complete L1 ERC20 deposit')
         throw error
       }
+
     } catch (error) {
       throw new BridgingError(
         `Failed to complete L1 ERC20 deposit: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -665,6 +629,7 @@ export default class TestE2e extends Command {
         if (l2Receipt && l2Receipt.status === 1) {
           spinner.succeed('L1 ETH deposit successfully completed on L2')
           this.results.bridgeFundsL1ToL2.complete = true
+          this.results.fundWalletOnL2.complete = true
         } else {
           spinner.fail('L2 transaction failed or was reverted.')
           throw new BridgingError('L2 transaction failed or was reverted.')
@@ -673,6 +638,7 @@ export default class TestE2e extends Command {
         spinner.fail('Failed to complete L1 ETH deposit')
         throw error
       }
+
     } catch (error) {
       throw new BridgingError(
         `Failed to complete L1 ETH deposit: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -721,6 +687,7 @@ export default class TestE2e extends Command {
 
       this.results.deployERC20OnL1.address = tokenContract
       this.results.deployERC20OnL1.complete = true
+
     } catch (error) {
       throw new DeploymentError(
         `Failed to deploy ERC20 on L1: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -740,6 +707,7 @@ export default class TestE2e extends Command {
 
       this.results.deployERC20OnL2.address = tokenContract
       this.results.deployERC20OnL2.complete = true
+
     } catch (error) {
       throw new DeploymentError(
         `Failed to deploy ERC20 on L2: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -759,8 +727,7 @@ export default class TestE2e extends Command {
           withdrawals = await getWithdrawals(this.wallet.address, this.bridgeApiUrl)
         } catch (error) {
           this.logResult(
-            `Warning: Failed to get withdrawals. Continuing... Error: ${
-              error instanceof Error ? error.message : 'Unknown error'
+            `Warning: Failed to get withdrawals. Continuing... Error: ${error instanceof Error ? error.message : 'Unknown error'
             }`,
             'warning',
           )
@@ -813,7 +780,7 @@ export default class TestE2e extends Command {
       // const value = amount + ethers.parseEther(`${gasLimit*l2BaseFee} wei`);
       await this.logAddress(await l1Messenger.getAddress(), `Calling relayMessageWithProof on`, Layer.L1)
 
-      const {from, message, nonce, proof, to, value} = unclaimedWithdrawal.claim_info
+      const { from, message, nonce, proof, to, value } = unclaimedWithdrawal.claim_info
 
       const tx = await l1Messenger.relayMessageWithProof(from, to, value, nonce, message, {
         batchIndex: proof.batch_index,
@@ -893,10 +860,16 @@ export default class TestE2e extends Command {
   }
 
   // Generate a new random wallet to run all tests.
-  private async generateNewWallet(): Promise<void> {
-    const randomWallet = ethers.Wallet.createRandom()
-    this.wallet = new ethers.Wallet(randomWallet.privateKey, this.l1Provider)
+  private async generateNewWallet(privateKey: string = ""): Promise<void> {
+    if (!privateKey) {
+      const randomWallet = ethers.Wallet.createRandom()
+      privateKey = randomWallet.privateKey
+    } else {
+      this.logResult('Loaded existing private key...',)
+    }
+    this.wallet = new ethers.Wallet(privateKey, this.l1Provider)
     await this.logAddress(this.wallet.address, 'Generated new wallet', Layer.L1)
+    this.results.fundWalletOnL1 = { complete: false, walletAddress: this.wallet.address, generatedPrivateKey: privateKey }
     this.logResult(`Private Key: ${chalk.yellow(this.wallet.privateKey)}`, 'warning')
   }
 
@@ -918,17 +891,17 @@ export default class TestE2e extends Command {
     }
   }
 
-  private handleGroupError(groupName: string, error: unknown): void {
-    if (error instanceof BridgingError || error instanceof DeploymentError) {
-      this.error(`${groupName} failed: ${error.message}`)
-    } else if (error instanceof Error) {
-      this.error(`${groupName} failed due to an unexpected error: ${error.message}`)
-    } else {
-      this.error(`${groupName} failed due to an unknown error`)
-    }
+  // private handleGroupError(groupName: string, error: unknown): void {
+  //   if (error instanceof BridgingError || error instanceof DeploymentError) {
+  //     this.error(`${groupName} failed: ${error.message}`)
+  //   } else if (error instanceof Error) {
+  //     this.error(`${groupName} failed due to an unexpected error: ${error.message}`)
+  //   } else {
+  //     this.error(`${groupName} failed due to an unknown error`)
+  //   }
 
-    throw error
-  }
+  //   throw error
+  // }
 
   private async logAddress(address: string, description: string, layer: Layer): Promise<void> {
     const link = await addressLink(address, this.blockExplorers[layer])
@@ -994,12 +967,12 @@ export default class TestE2e extends Command {
     this.log('\n')
     this.logResult('Scan this QR code to fund the address:', 'info')
 
-    this.log(await QRCode.toString(qrString, {small: true, type: 'terminal'}))
+    this.log(await QRCode.toString(qrString, { small: true, type: 'terminal' }))
 
     let funded = false
 
     while (!funded) {
-      await confirm({message: 'Press Enter when ready...'})
+      await confirm({ message: 'Press Enter when ready...' })
 
       this.logResult(`Checking...`, 'info')
       // Check if wallet is actually funded -- if not, we'll loop.
@@ -1052,64 +1025,124 @@ export default class TestE2e extends Command {
 
       this.logSection('Setup L1')
       // Setup L1
-      if (!this.skipWalletGen) {
+
+      if (!this.skipWalletGen || !this.results.fundWalletOnL1.complete) {
         this.logSection('Generate and Fund Wallets')
-        await this.generateNewWallet()
+        if (!this.results.fundWalletOnL1.generatedPrivateKey) {
+          await this.generateNewWallet()
+        }
         await this.fundWalletOnL1()
+        await this.saveProgress()
+      } else {
+        this.logResult("Skipping section...", "info");
       }
 
       this.logSection('Initiate ETH Deposit on L1')
-      await this.bridgeFundsL1ToL2()
-      await this.shortPause()
+      if (!this.results.bridgeFundsL1ToL2.l2MessengerTx) {
+        await this.bridgeFundsL1ToL2()
+        await this.shortPause()
+        await this.saveProgress()
+      } else {
+        this.logResult("Skipping section...", "info");
+      }
 
       this.logSection('Deploying ERC20 on L1')
-      await this.deployERC20OnL1()
-      await this.shortPause()
+      if (!this.results.deployERC20OnL1.complete) {
+        await this.deployERC20OnL1()
+        await this.shortPause()
+        await this.saveProgress()
+      } else {
+        this.logResult("Skipping section...", "info");
+      }
 
       this.logSection('Initiate ERC20 Deposit on L1')
-      await this.bridgeERC20L1ToL2()
-      await this.shortPause()
+      if (!this.results.bridgeERC20L1ToL2.complete) {
+        await this.bridgeERC20L1ToL2()
+        await this.shortPause()
+        await this.saveProgress()
+      } else {
+        this.logResult("Skipping section...", "info");
+      }
 
       // Setup L2
       this.logSection('Setup L2')
-      await this.fundWalletOnL2()
-      await this.shortPause()
+      if (!this.results.fundWalletOnL2.complete) {
+        await this.fundWalletOnL2()
+        await this.shortPause()
+        await this.saveProgress()
+      } else {
+        this.logResult("Skipping section...", "info");
+      }
 
+      // this complete is less related to resume function,
+      // but just to know result of above section
       if (!this.results.fundWalletOnL2.complete) {
         this.logSection('Waiting for L1 ETH Deposit')
         await this.completeL1ETHDeposit()
         await this.shortPause()
+        await this.saveProgress()
       }
 
       this.logSection('Initiate ETH Withdrawal on L2')
-      await this.bridgeFundsL2ToL1()
-      await this.shortPause()
+      if (!this.results.bridgeFundsL2ToL1.complete) {
+        await this.bridgeFundsL2ToL1()
+        await this.shortPause()
+        await this.saveProgress()
+      } else {
+        this.logResult("Skipping section...", "info");
+      }
 
       this.logSection('Deploying an ERC20 on L2')
-      await this.deployERC20OnL2()
-      await this.shortPause()
+      if (!this.results.deployERC20OnL2.complete) {
+        await this.deployERC20OnL2()
+        await this.shortPause()
+        await this.saveProgress()
+      } else {
+        this.logResult("Skipping section...", "info");
+      }
 
       this.logSection('Waiting for L1 ERC20 Deposit')
-      await this.completeL1ERC20Deposit()
-      // Wait for a block...
-      await this.shortPause()
-      await this.shortPause()
-      await this.shortPause()
-      await this.shortPause()
-      await this.shortPause()
-      await this.shortPause()
-      await this.shortPause()
-      await this.shortPause()
+      if (!this.results.bridgeERC20L1ToL2.complete) {
+        await this.completeL1ERC20Deposit()
+        // Wait for a block...
+        await this.shortPause()
+        await this.shortPause()
+        await this.shortPause()
+        await this.shortPause()
+        await this.shortPause()
+        await this.shortPause()
+        await this.shortPause()
+        await this.shortPause()
+        await this.saveProgress()
+      } else {
+        this.logResult("Skipping section...", "info");
+      }
 
       this.logSection('Bridging ERC20 Back to L1')
-      await this.bridgeERC20L2ToL1()
-      await this.shortPause()
+      if (!this.results.bridgeERC20L2ToL1.l2WithdrawTx) {
+        await this.bridgeERC20L2ToL1()
+        await this.shortPause()
+        await this.saveProgress()
+      } else {
+        this.logResult("Skipping section...", "info");
+      }
 
       this.logSection('Claiming ETH and ERC20 on L1')
-      await this.claimFundsOnL1()
-      await this.shortPause()
-      await this.claimERC20OnL1()
-      await this.shortPause()
+
+      if (!(this.results.claimETHOnL1.complete && this.results.claimERC20OnL1.complete)) {
+        if (!this.results.claimETHOnL1.complete) {
+          await this.claimFundsOnL1()
+          await this.shortPause()
+          await this.saveProgress()
+        }
+        if (!this.results.claimERC20OnL1.complete) {
+          await this.claimERC20OnL1()
+          await this.shortPause()
+          await this.saveProgress()
+        }
+      } else {
+        this.logResult("Skipping section...", "info");
+      }
 
       this.logResult('E2E Test completed successfully', 'success')
     } catch (error) {
@@ -1120,5 +1153,69 @@ export default class TestE2e extends Command {
   private async shortPause() {
     // Sleep for 0.5 second
     await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+
+  private async saveProgress(): Promise<void> {
+    if (!this.resumeFilePath) {
+      this.resumeFilePath = 'e2e_resume.json'
+    }
+
+    const serializeBigInt = (key: string, value: any) => {
+      if (typeof value === 'bigint') {
+        return value.toString()
+      }
+      return value
+    }
+
+    const resumeData = {
+      results: this.results,
+      timestamp: new Date().toISOString(),
+    }
+
+    try {
+      const fileContent = JSON.stringify(resumeData, serializeBigInt, 2)
+      await fs.writeFile(this.resumeFilePath, fileContent, 'utf-8')
+      this.logResult(`Progress saved: ${this.resumeFilePath}`, 'success')
+    } catch (error) {
+      this.logResult(`Failed to save progress: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+    }
+  }
+
+  private async loadResumeFile(): Promise<void> {
+    try {
+      if (!this.resumeFilePath) {
+        throw new Error('Resume file path is not set.')
+      }
+
+      this.logResult(`Loading resume file from: ${this.resumeFilePath}`, 'info')
+
+      const fileContent = await fs.readFile(this.resumeFilePath, 'utf-8')
+      const resumeData = JSON.parse(fileContent, (key, value) => {
+        // Check if the value is a string that represents a BigInt
+        if (typeof value === 'string' && /^\d+n$/.test(value)) {
+          return BigInt(value.slice(0, -1))
+        }
+        return value
+      })
+
+      if (resumeData.results) {
+        this.results = resumeData.results
+        this.logResult('Resume data loaded successfully', 'success')
+
+        // Log the loaded state
+        Object.entries(this.results).forEach(([key, value]) => {
+          this.logResult(`${key}: ${JSON.stringify(value)}`, 'info')
+        })
+      } else {
+        throw new Error('Invalid resume file format: missing results data')
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        this.logResult(`Failed to load resume file: ${error.message}`, 'error')
+      } else {
+        this.logResult('Failed to load resume file: Unknown error', 'error')
+      }
+      throw error
+    }
   }
 }

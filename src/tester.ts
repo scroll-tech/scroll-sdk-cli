@@ -5,9 +5,9 @@ import {
 	getGasOracleL2BaseFee,
 	awaitTx,
 	txLink,
-	getWithdrawals
+	getWithdrawals,
+	awaitERC20Balance
 } from './utils/onchain/index.js';
-import { getScrollERC20Balance } from './utils/onchain/getScrollERC20Balance.js';
 
 const EXTERNAL_RPC_URI_L1 = "https://alien-flashy-arm.ethereum-sepolia.quiknode.pro/2aeb75414e5ee0e930b64c2e7feff59efb537f30"
 const EXTERNAL_RPC_URI_L2 = "https://sepolia-rpc.scroll.io/"
@@ -89,12 +89,12 @@ async function testGetWithdrawals() {
 
 }
 
-async function testGetScrollERC20Balance() {
+async function testAwaitERC20Balance() {
 	try {
-		const results = await getScrollERC20Balance("0x98110937b5D6C5FCB0BA99480e585D2364e9809C", "0x92e717f0564811A79A8d3E8F3cF1D65Ca06d2FA0", EXTERNAL_RPC_URI_L2)
+		const results = await awaitERC20Balance("0x98110937b5D6C5FCB0BA99480e585D2364e9809C", "0x92e717f0564811A79A8d3E8F3cF1D65Ca06d2FA0", EXTERNAL_RPC_URI_L2)
 		console.log(results);
 	} catch (error) {
-		console.error('Error in testGetWithdrawals:', error);
+		console.error('Error in testAwaitERC20Balance:', error);
 	}
 
 }
@@ -110,7 +110,7 @@ async function main() {
 	await testAwaitTx();
 	await testTxLink();
 	await testGetWithdrawals();
-	await testGetScrollERC20Balance()
+	await testAwaitERC20Balance()
 	console.log('Test completed.');
 }
 

@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import { RpcSource, scrollERC20ABI, generateProvider } from './index.js';
 
-export async function getScrollERC20Balance(
+export async function awaitERC20Balance(
 	walletAddress: string,
 	erc20Address: string,
 	rpc: RpcSource
