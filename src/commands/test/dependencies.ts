@@ -1,6 +1,7 @@
 import {Command, Flags} from '@oclif/core'
-import {exec} from 'child_process'
-import {promisify} from 'util'
+import chalk from 'chalk'
+import {exec} from 'node:child_process'
+import {promisify} from 'node:util'
 
 const execAsync = promisify(exec)
 
@@ -11,54 +12,76 @@ export default class TestDependencies extends Command {
     dev: Flags.boolean({char: 'd', description: 'Include development dependencies'}),
   }
 
+  public async run(): Promise<void> {
+    const {flags} = await this.parse(TestDependencies)
+
+    const dependencies = [
+      {command: 'docker --version', name: 'Docker'},
+      {command: 'kubectl version --client', name: 'Kubectl'},
+      {command: 'minikube version', name: 'Minikube'},
+      {command: 'helm version --short', name: 'Helm'},
+    ]
+
+    if (flags.dev) {
+      dependencies.push({command: 'cast --version', name: 'Cast'})
+    }
+
+    let allFound = true
+    const foundDependencies: string[] = []
+    const missingDependencies: string[] = []
+
+    for (const dep of dependencies) {
+      // eslint-disable-next-line no-await-in-loop
+      const found = await this.checkDependency(dep.command)
+      if (found) {
+        foundDependencies.push(dep.name)
+      } else {
+        allFound = false
+        missingDependencies.push(dep.name)
+      }
+    }
+
+    this.log(chalk.cyan('\nDependency Check Results:'))
+
+    if (foundDependencies.length > 0) {
+      this.log(chalk.green('\n✅ Found Dependencies:'))
+      for (const dep of foundDependencies) {
+        this.log(chalk.green(`  • ${dep}`))
+      }
+    }
+
+    if (missingDependencies.length > 0) {
+      this.log(chalk.yellow('\n❌ Missing Dependencies:'))
+      for (const dep of missingDependencies) {
+        this.log(chalk.yellow(`  • ${dep}`))
+        this.log(chalk.gray(`    To install: ${this.getInstallInstructions(dep)}`))
+      }
+    }
+
+    if (allFound) {
+      this.log(chalk.green('\n🎉 All required dependencies are installed.'))
+    } else {
+      this.log(chalk.yellow('\n⚠️  Some dependencies are missing. Please install them to ensure full functionality.'))
+    }
+  }
+
   private async checkDependency(command: string): Promise<boolean> {
     try {
       await execAsync(command)
       return true
-    } catch (error) {
+    } catch {
       return false
     }
   }
 
   private getInstallInstructions(name: string): string {
     const instructions: {[key: string]: string} = {
+      Cast: 'brew install cast || https://book.getfoundry.sh/getting-started/installation',
       Docker: 'brew install --cask docker || https://docs.docker.com/get-docker/',
+      Helm: 'brew install helm || https://helm.sh/docs/intro/install/',
       Kubectl: 'brew install kubectl || https://kubernetes.io/docs/tasks/tools/',
       Minikube: 'brew install minikube || https://minikube.sigs.k8s.io/docs/start/',
-      Helm: 'brew install helm || https://helm.sh/docs/intro/install/',
-      Cast: 'brew install cast || https://book.getfoundry.sh/getting-started/installation',
     }
     return instructions[name] || `Please refer to ${name}'s official documentation for installation instructions.`
-  }
-
-  public async run(): Promise<void> {
-    const {flags} = await this.parse(TestDependencies)
-
-    const dependencies = [
-      {name: 'Docker', command: 'docker --version'},
-      {name: 'Kubectl', command: 'kubectl version --client'},
-      {name: 'Minikube', command: 'minikube version'},
-      {name: 'Helm', command: 'helm version --short'},
-    ]
-
-    if (flags.dev) {
-      dependencies.push({name: 'Cast', command: 'cast --version'})
-    }
-
-    let allFound = true
-
-    for (const dep of dependencies) {
-      const found = await this.checkDependency(dep.command)
-      if (!found) {
-        allFound = false
-        this.log(`${dep.name} not found. To install:`)
-        this.log(this.getInstallInstructions(dep.name))
-        this.log('')
-      }
-    }
-
-    if (allFound) {
-      this.log('All required dependencies are installed.')
-    }
   }
 }
