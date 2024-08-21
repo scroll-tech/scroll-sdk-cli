@@ -54,7 +54,7 @@ export default class HelperFundContracts extends Command {
 			char: 'k',
 			description: 'Private key for funder wallet',
 		}),
-		'config-contracts': Flags.string({
+		contracts: Flags.string({
 			char: 'n',
 			default: './config-contracts.toml',
 			description: 'Path to config-contracts.toml file',
@@ -120,8 +120,8 @@ export default class HelperFundContracts extends Command {
 
 		if (flags['gateway-address']) {
 			this.l1ETHGateway = flags['gateway-address']
-		} else if (flags['config-contracts']) {
-			const contractsConfigPath = path.resolve(flags['config-contracts'])
+		} else if (flags.contracts) {
+			const contractsConfigPath = path.resolve(flags.contracts)
 			try {
 				const contractsConfig = parseTomlConfig(contractsConfigPath)
 				this.l1ETHGateway = contractsConfig?.L1_ETH_GATEWAY_PROXY_ADDR

@@ -1,10 +1,10 @@
-import {Command, Flags} from '@oclif/core'
+import { Command, Flags } from '@oclif/core'
 import cliProgress from 'cli-progress'
-import {ethers} from 'ethers'
+import { ethers } from 'ethers'
 import path from 'node:path'
 
-import {DeployedContract, L1Contracts, L2Contracts} from '../../data/contracts.js'
-import {parseTomlConfig} from '../../utils/config-parser.js'
+import { DeployedContract, L1Contracts, L2Contracts } from '../../data/contracts.js'
+import { parseTomlConfig } from '../../utils/config-parser.js'
 
 interface ContractsConfig {
   [key: string]: string
@@ -20,7 +20,7 @@ export default class TestContracts extends Command {
       description: 'Path to config.toml file',
     }),
     contracts: Flags.string({
-      char: 't',
+      char: 'n',
       default: './config-contracts.toml',
       description: 'Path to configs-contracts.toml file',
     }),
@@ -32,7 +32,7 @@ export default class TestContracts extends Command {
   }
 
   async run(): Promise<void> {
-    const {flags} = await this.parse(TestContracts)
+    const { flags } = await this.parse(TestContracts)
 
     const configPath = path.resolve(flags.config)
     const contractsPath = path.resolve(flags.contracts)
@@ -84,7 +84,7 @@ export default class TestContracts extends Command {
         this.log(`Missing address for contract: ${contract.name}`)
       }
 
-      return {...contract, address}
+      return { ...contract, address }
     }).filter((address) => address !== undefined)
 
     const l2Addresses: DeployedContract[] = L2Contracts.map((contract) => {
@@ -93,7 +93,7 @@ export default class TestContracts extends Command {
         this.log(`Missing address for contract: ${contract.name}`)
       }
 
-      return {...contract, address}
+      return { ...contract, address }
     }).filter((address) => address !== undefined)
 
     try {
@@ -108,8 +108,8 @@ export default class TestContracts extends Command {
         cliProgress.Presets.shades_classic,
       )
 
-      const l1BarDeploy = multibarDeployment.create(l1Addresses.length, 0, {name: 'Checking L1 contract deployment...'})
-      const l2BarDeploy = multibarDeployment.create(l2Addresses.length, 0, {name: 'Checking L2 contract deployment...'})
+      const l1BarDeploy = multibarDeployment.create(l1Addresses.length, 0, { name: 'Checking L1 contract deployment...' })
+      const l2BarDeploy = multibarDeployment.create(l2Addresses.length, 0, { name: 'Checking L2 contract deployment...' })
 
       const notDeployed: DeployedContract[] = []
 
@@ -233,7 +233,7 @@ export default class TestContracts extends Command {
     notDeployed: DeployedContract[],
   ) {
     for (const c of contracts) {
-      progressBar.update({name: `Checking ${c.name}...`})
+      progressBar.update({ name: `Checking ${c.name}...` })
       const code = await provider.getCode(c.address ?? '')
       if (code === '0x') {
         notDeployed.push(c)
@@ -250,7 +250,7 @@ export default class TestContracts extends Command {
     notInitialized: DeployedContract[],
   ) {
     for (const c of contracts) {
-      progressBar.update({name: `Checking ${c.name}...`})
+      progressBar.update({ name: `Checking ${c.name}...` })
       try {
         const initCount = await provider.getStorage(c?.address || '', 0)
         if (Number.parseInt(initCount) > 0) {
@@ -274,7 +274,7 @@ export default class TestContracts extends Command {
     const ownableABI = ['function owner() view returns (address)']
 
     for (const c of contracts) {
-      progressBar.update({name: `Checking ${c.name}...`})
+      progressBar.update({ name: `Checking ${c.name}...` })
       if (c.owned && c.address) {
         const contract = new ethers.Contract(c.address, ownableABI, provider)
         try {
