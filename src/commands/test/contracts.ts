@@ -2,13 +2,16 @@ import { Command, Flags } from '@oclif/core'
 import cliProgress from 'cli-progress'
 import { ethers } from 'ethers'
 import path from 'node:path'
+import chalk from 'chalk'
 
-import { DeployedContract, L1Contracts, L2Contracts } from '../../data/contracts.js'
+import { DeployedContract, contracts, Layer } from '../../data/contracts.js'
 import { parseTomlConfig } from '../../utils/config-parser.js'
+import { addressLink, txLink } from '../../utils/onchain/index.js'
 
 interface ContractsConfig {
   [key: string]: string
 }
+
 
 export default class TestContracts extends Command {
   static description = 'Test contracts by checking deployment and initialization'
@@ -29,6 +32,11 @@ export default class TestContracts extends Command {
       default: false,
       description: 'Run inside Kubernetes pod',
     }),
+  }
+
+  private blockExplorers: Record<Layer, { blockExplorerURI: string }> = {
+    [Layer.L1]: { blockExplorerURI: '' },
+    [Layer.L2]: { blockExplorerURI: '' },
   }
 
   async run(): Promise<void> {
@@ -54,23 +62,26 @@ export default class TestContracts extends Command {
 
     const owner = config?.accounts?.OWNER_ADDR
 
+    this.blockExplorers.l1.blockExplorerURI = config?.frontend?.EXTERNAL_EXPLORER_URI_L1
+    this.blockExplorers.l2.blockExplorerURI = config?.frontend?.EXTERNAL_EXPLORER_URI_L2
+
     // Check if RPC URLs are defined
     if (!l1RpcUrl || !l2RpcUrl) {
-      this.error(
+      this.error(chalk.red(
         `Missing RPC URL(s) in ${configPath}. Please ensure L1_RPC_ENDPOINT and L2_RPC_ENDPOINT (for pod mode) or EXTERNAL_RPC_URI_L1 and EXTERNAL_RPC_URI_L2 (for non-pod mode) are defined.`,
-      )
+      ))
     }
 
     // Check if owner address is defined
     if (!owner) {
-      this.error(`Missing OWNER_ADDR in ${configPath}. Please ensure it is defined in the accounts section.`)
+      this.error(chalk.red(`Missing OWNER_ADDR in ${configPath}. Please ensure it is defined in the accounts section.`))
     }
 
     // Check if contractsConfig is empty
     if (Object.keys(contractsConfig).length === 0) {
-      this.error(
+      this.error(chalk.red(
         `Contract configuration in ${contractsPath} is empty. Please ensure it contains the necessary contract addresses.`,
-      )
+      ))
     }
 
     const l1Provider = new ethers.JsonRpcProvider(l1RpcUrl)
@@ -78,23 +89,23 @@ export default class TestContracts extends Command {
 
     // Check that config has a value for each required contract name
 
-    const l1Addresses: DeployedContract[] = L1Contracts.map((contract) => {
+    const l1Addresses: DeployedContract[] = contracts.filter((contract) => contract.layer === Layer.L1).map((contract) => {
       const address = contractsConfig[contract.name]
       if (!address) {
-        this.log(`Missing address for contract: ${contract.name}`)
+        this.log(chalk.yellow(`Missing address for contract: ${contract.name}`))
       }
 
       return { ...contract, address }
-    }).filter((address) => address !== undefined)
+    }).filter((contract: DeployedContract) => contract.address !== undefined)
 
-    const l2Addresses: DeployedContract[] = L2Contracts.map((contract) => {
+    const l2Addresses: DeployedContract[] = contracts.filter((contract) => contract.layer === Layer.L2).map((contract) => {
       const address = contractsConfig[contract.name]
       if (!address) {
-        this.log(`Missing address for contract: ${contract.name}`)
+        this.log(chalk.yellow(`Missing address for contract: ${contract.name}`))
       }
 
       return { ...contract, address }
-    }).filter((address) => address !== undefined)
+    }).filter((contract) => contract.address !== undefined)
 
     try {
       // Check Deployments
@@ -195,34 +206,44 @@ export default class TestContracts extends Command {
           (!contract.owned || !notOwned.some((no) => no.name === contract.name)),
       )
 
-      this.log('\nCorrectly configured contracts:')
+      this.log(chalk.green('\nCorrectly configured contracts:'))
       for (const contract of correctlyConfigured) {
         let status = 'Deployed'
         if (contract.initializes) status += ', Initialized'
         if (contract.owned) status += ', Correctly Owned'
-        this.log(`- ${contract.name} (${contract.address}): ${status}`)
+        const link = await addressLink(contract.address!, this.blockExplorers[contract.layer === 'l1' ? Layer.L1 : Layer.L2])
+        this.log(`- ${chalk.cyan(contract.name)}\n     ${chalk.blue(link)}\n     Status: ${chalk.green(status)}`)
       }
 
       if (notDeployed.length > 0) {
-        this.log('\nContracts not deployed:')
-        for (const contract of notDeployed) this.log(`- ${contract.name} (${contract.address})`)
+        this.log(chalk.red('\nContracts not deployed:'))
+        for (const contract of notDeployed) {
+          const link = await addressLink(contract.address!, this.blockExplorers[contract.layer === 'l1' ? Layer.L1 : Layer.L2])
+          this.log(chalk.red(`- ${contract.name}\n     ${chalk.blue(link)}`))
+        }
       }
 
       if (notInitialized.length > 0) {
-        this.log('\nContracts not initialized:')
-        for (const contract of notInitialized) this.log(`- ${contract.name} (${contract.address})`)
+        this.log(chalk.yellow('\nContracts not initialized:'))
+        for (const contract of notInitialized) {
+          const link = await addressLink(contract.address!, this.blockExplorers[contract.layer === 'l1' ? Layer.L1 : Layer.L2])
+          this.log(chalk.yellow(`- ${contract.name}\n     ${chalk.blue(link)}`))
+        }
       }
 
       if (notOwned.length > 0) {
-        this.log('\nContracts without correct owner:')
-        for (const contract of notInitialized) this.log(`- ${contract.name} (${contract.address})`)
+        this.log(chalk.yellow('\nContracts without correct owner:'))
+        for (const contract of notOwned) {
+          const link = await addressLink(contract.address!, this.blockExplorers[contract.layer === 'l1' ? Layer.L1 : Layer.L2])
+          this.log(chalk.yellow(`- ${contract.name}\n     ${chalk.blue(link)}`))
+        }
       }
 
       if (notDeployed.length === 0 && notInitialized.length === 0 && notOwned.length === 0) {
-        this.log('\nAll contracts are deployed, initialized and have owner set.')
+        this.log(chalk.green('\nAll contracts are deployed, initialized and have owner set.'))
       }
     } catch (error) {
-      this.error(`Failed to check contracts: ${error}`)
+      this.error(chalk.red(`Failed to check contracts: ${error}`))
     }
   }
 
@@ -252,8 +273,11 @@ export default class TestContracts extends Command {
     for (const c of contracts) {
       progressBar.update({ name: `Checking ${c.name}...` })
       try {
-        const initCount = await provider.getStorage(c?.address || '', 0)
-        if (Number.parseInt(initCount) > 0) {
+        if (!c.address) {
+          throw (`No address found for ${c.name}`)
+        }
+        const initCount = await provider.getStorage(c.address, 0)
+        if (Number.parseInt(initCount, 16) <= 0) {
           notInitialized.push(c)
         }
       } catch (error) {

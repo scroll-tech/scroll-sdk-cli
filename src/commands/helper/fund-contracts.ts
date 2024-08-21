@@ -54,23 +54,13 @@ export default class HelperFundContracts extends Command {
 			char: 'k',
 			description: 'Private key for funder wallet',
 		}),
-		contracts: Flags.string({
-			char: 'n',
-			default: './config-contracts.toml',
-			description: 'Path to config-contracts.toml file',
-		}),
-		'gateway-address': Flags.string({
-			char: 'g',
-			description: 'L1 Gateway Router or L1 ETH Gateway contract address',
-		}),
 	}
 
 	private l1Provider!: ethers.JsonRpcProvider
 	private l2Provider!: ethers.JsonRpcProvider
 	private l1Rpc!: string
 	private l2Rpc!: string
-	private l1FundingWallet!: ethers.Wallet
-	private l2FundingWallet!: ethers.Wallet
+	private fundingWallet!: ethers.Wallet
 	private l1ETHGateway!: string
 	private blockExplorers: Record<Layer, { blockExplorerURI: string }> = {
 		[Layer.L1]: { blockExplorerURI: '' },
@@ -111,23 +101,9 @@ export default class HelperFundContracts extends Command {
 		this.l1ETHGateway = config?.contracts?.L1_ETH_GATEWAY_PROXY_ADDR
 
 		if (flags['private-key']) {
-			this.l1FundingWallet = new ethers.Wallet(flags['private-key'], this.l1Provider)
-			this.l2FundingWallet = new ethers.Wallet(flags['private-key'], this.l2Provider)
+			this.fundingWallet = new ethers.Wallet(flags['private-key'], this.l1Provider)
 		} else if (!flags.manual && !flags.dev) {
-			this.l1FundingWallet = new ethers.Wallet(config.accounts.DEPLOYER_PRIVATE_KEY, this.l1Provider)
-			this.l2FundingWallet = new ethers.Wallet(config.accounts.DEPLOYER_PRIVATE_KEY, this.l2Provider)
-		}
-
-		if (flags['gateway-address']) {
-			this.l1ETHGateway = flags['gateway-address']
-		} else if (flags.contracts) {
-			const contractsConfigPath = path.resolve(flags.contracts)
-			try {
-				const contractsConfig = parseTomlConfig(contractsConfigPath)
-				this.l1ETHGateway = contractsConfig?.L1_ETH_GATEWAY_PROXY_ADDR
-			} catch (error) {
-				this.log("Parsing config-contracts.toml failed. Bridging will be disabled.")
-			}
+			this.fundingWallet = new ethers.Wallet(config.accounts.DEPLOYER_PRIVATE_KEY, this.l1Provider)
 		}
 
 		const l1Addresses = [
@@ -177,20 +153,14 @@ export default class HelperFundContracts extends Command {
 				continue
 			}
 
-			this.log(this.l1ETHGateway)
+			const fundingMethod = await this.promptUserForL2Funding()
 
-			if (flags.manual) {
-				await this.promptManualFunding(address, FUNDING_AMOUNT, Layer.L2)
+			if (fundingMethod === 'bridge') {
+				await this.bridgeFundsL1ToL2(address, FUNDING_AMOUNT)
+			} else if (fundingMethod === 'direct') {
+				await this.fundAddressNetwork(this.l2Provider, address, FUNDING_AMOUNT, Layer.L2)
 			} else {
-				const fundingMethod = await this.promptUserForL2Funding()
-
-				if (fundingMethod === 'bridge') {
-					await this.bridgeFundsL1ToL2(address, FUNDING_AMOUNT)
-				} else if (fundingMethod === 'direct') {
-					await this.fundAddressNetwork(this.l2Provider, address, FUNDING_AMOUNT, Layer.L2)
-				} else {
-					await this.promptManualFunding(address, FUNDING_AMOUNT, Layer.L2)
-				}
+				await this.promptManualFunding(address, FUNDING_AMOUNT, Layer.L2)
 			}
 		}
 	}
@@ -206,9 +176,8 @@ export default class HelperFundContracts extends Command {
 	}
 
 	private async fundAddressNetwork(provider: ethers.JsonRpcProvider, address: string, amount: number, layer: Layer) {
-		const fundingWallet = layer === Layer.L1 ? this.l1FundingWallet : this.l2FundingWallet
 		try {
-			const tx = await fundingWallet.sendTransaction({
+			const tx = await this.fundingWallet.sendTransaction({
 				to: address,
 				value: ethers.parseEther(amount.toString()),
 			})
@@ -255,8 +224,8 @@ export default class HelperFundContracts extends Command {
 		const answer = await select({
 			message: 'How would you like to fund the L2 address?',
 			choices: [
-				{ name: 'Bridge funds from L1', value: 'bridge', disabled: !(this.l1ETHGateway) },
-				{ name: 'Directly fund L2 wallet using Deployer / private key', value: 'direct' },
+				{ name: 'Bridge funds from L1', value: 'bridge' },
+				{ name: 'Directly fund L2 wallet', value: 'direct' },
 				{ name: 'Manual funding', value: 'manual' },
 			],
 		})
@@ -270,12 +239,10 @@ export default class HelperFundContracts extends Command {
 			const gasLimit = BigInt(170_000)
 			const value = ethers.parseEther((amount + 0.001).toString())
 
-			this.log(this.l1ETHGateway)
-
 			const l1ETHGateway = new ethers.Contract(
 				this.l1ETHGateway,
 				['function depositETH(address _to, uint256 _amount, uint256 _gasLimit) payable'],
-				this.l1FundingWallet
+				this.fundingWallet
 			)
 
 			await this.logAddress(this.l1ETHGateway, `Depositing ${amount} ETH by sending ${ethers.formatEther(value)} to`, Layer.L1)
