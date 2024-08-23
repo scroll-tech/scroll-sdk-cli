@@ -3,20 +3,38 @@
 # 		bash create-env-files.sh
 # 		cd charts/scroll-sdk && time docker run --rm -it -v .:/contracts/volume scrolltech/scroll-stack-contracts:gen-configs-v0.0.9
 
-# bootstrap:
-# 		helm pull ../charts/blockscout
+bootstrap:
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/balance-checker
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/blockscout
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/blockscout-sc-verifier
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/bridge-history-api
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/bridge-history-fetcher
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/chain-monitor
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/contracts
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/coordinator-api
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/coordinator-cron
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/frontends
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/gas-oracle
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/l2-bootnode
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/l2-rpc
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/l2-sequencer
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/rollup-explorer-backend
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/rollup-node
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/scroll-common
+		helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/scroll-sdk
+		find . -name "*.tgz" -type f -exec tar -xzf {} \;
 
-install-db:
-		helm upgrade -i postgresql oci://registry-1.docker.io/bitnamicharts/postgresql --version 15.5.0 --values values/postgres.yaml
-		helm upgrade -i postgresql-blockscout oci://registry-1.docker.io/bitnamicharts/postgresql --version 15.5.0 --values values/postgres-blockscout.yaml
-		helm upgrade -i postgresql-chain-monitor oci://registry-1.docker.io/bitnamicharts/postgresql --version 15.5.0 --values values/postgres-chain-monitor.yaml
-		helm upgrade -i postgresql-l1-explorer oci://registry-1.docker.io/bitnamicharts/postgresql --version 15.5.0 --values values/postgres-l1-explorer.yaml
-		helm upgrade -i postgresql-rollup oci://registry-1.docker.io/bitnamicharts/postgresql --version 15.5.0 --values values/postgres-rollup.yaml
+# install-db:
+# 		helm upgrade -i postgresql oci://registry-1.docker.io/bitnamicharts/postgresql --version 15.5.0 --values values/postgres.yaml
+# 		helm upgrade -i postgresql-blockscout oci://registry-1.docker.io/bitnamicharts/postgresql --version 15.5.0 --values values/postgres-blockscout.yaml
+# 		helm upgrade -i postgresql-chain-monitor oci://registry-1.docker.io/bitnamicharts/postgresql --version 15.5.0 --values values/postgres-chain-monitor.yaml
+# 		helm upgrade -i postgresql-l1-explorer oci://registry-1.docker.io/bitnamicharts/postgresql --version 15.5.0 --values values/postgres-l1-explorer.yaml
+# 		helm upgrade -i postgresql-rollup oci://registry-1.docker.io/bitnamicharts/postgresql --version 15.5.0 --values values/postgres-rollup.yaml
 install:
 		helm upgrade -i scroll-common scroll-common
 		helm upgrade -i l2-sequencer l2-sequencer --values l2-sequencer/values/production.yaml
 		helm upgrade -i coordinator-api coordinator-api --values coordinator-api/values/production.yaml
-		helm upgrade -i balance-checker balance-checker --values balance-checker/values/production.yaml
+		helm upgrade -i balance-checker balance-checker
 		helm upgrade -i blockscout blockscout --values blockscout/values/production.yaml
 		helm upgrade -i bridge-history-api bridge-history-api --values bridge-history-api/values/production.yaml
 		helm upgrade -i bridge-history-fetcher bridge-history-fetcher --values bridge-history-fetcher/values/production.yaml
@@ -29,33 +47,33 @@ install:
 		helm upgrade -i rollup-explorer-backend rollup-explorer-backend --values rollup-explorer-backend/values/production.yaml
 		helm upgrade -i rollup-node rollup-node --values rollup-node/values/production.yaml
 		helm upgrade -i contracts contracts --values contracts/values/production.yaml
-
-init-db:
-		./init-db.sh localhost 12345 postgres azerty12345 scroll chain_monitor test1234
-		./init-db.sh localhost 6789 postgres azerty12345 scroll rollup_node test1234
-		./init-db.sh localhost 12344 postgres qwerty12345 scroll bridge_history_user test1234
-
-delete:
-		helm delete balance-checker
-		helm delete blockscout
-		helm delete bridge-history-api
-		helm delete bridge-history-fetcher
-		helm delete chain-monitor
-		helm delete coordinator-api
-		helm delete coordinator-cron
-		helm delete frontends
-		helm delete gas-oracle
-		helm delete l2-bootnode
-		helm delete l2-rpc
-		helm delete l2-sequencer
-		helm delete rollup-explorer-backend
-		helm delete rollup-node
-		helm delete rpc-gateway
-		helm delete scroll-common
-
-delete-db:
-		helm delete postgresql
-		helm delete postgresql-blockscout
-		helm delete postgresql-chain-monitor
-		helm delete postgresql-l1-explorer
-		helm delete postgresql-rollup
+#
+# init-db:
+# 		./init-db.sh localhost 12345 postgres azerty12345 scroll chain_monitor test1234
+# 		./init-db.sh localhost 6789 postgres azerty12345 scroll rollup_node test1234
+# 		./init-db.sh localhost 12344 postgres qwerty12345 scroll bridge_history_user test1234
+#
+# delete:
+# 		helm delete balance-checker
+# 		helm delete blockscout
+# 		helm delete bridge-history-api
+# 		helm delete bridge-history-fetcher
+# 		helm delete chain-monitor
+# 		helm delete coordinator-api
+# 		helm delete coordinator-cron
+# 		helm delete frontends
+# 		helm delete gas-oracle
+# 		helm delete l2-bootnode
+# 		helm delete l2-rpc
+# 		helm delete l2-sequencer
+# 		helm delete rollup-explorer-backend
+# 		helm delete rollup-node
+# 		helm delete rpc-gateway
+# 		helm delete scroll-common
+#
+# delete-db:
+# 		helm delete postgresql
+# 		helm delete postgresql-blockscout
+# 		helm delete postgresql-chain-monitor
+# 		helm delete postgresql-l1-explorer
+# 		helm delete postgresql-rollup
