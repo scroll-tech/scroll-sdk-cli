@@ -121,7 +121,7 @@ export default class HelperFundAccounts extends Command {
     }
 
     await this.fundL1Addresses(l1Addresses, flags)
-    await this.fundL2Addresses(l2Addresses, flags)
+    await this.fundL2Addresses(l2Addresses)
 
     this.log(chalk.green('Funding complete'))
   }
