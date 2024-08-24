@@ -14,6 +14,7 @@ enum Layer {
 }
 
 const FUNDING_AMOUNT = 0.004
+const DEPLOYER_FUNDING_AMOUNT = 2
 
 export default class HelperFundContracts extends Command {
 	static description = 'Fund L1 and L2 accounts for contracts'
@@ -53,6 +54,11 @@ export default class HelperFundContracts extends Command {
 		'private-key': Flags.string({
 			char: 'k',
 			description: 'Private key for funder wallet',
+		}),
+		'fund-deployer': Flags.boolean({
+			char: 'i',
+			description: 'Fund the deployer address only',
+			default: false,
 		}),
 	}
 
@@ -106,25 +112,38 @@ export default class HelperFundContracts extends Command {
 			this.fundingWallet = new ethers.Wallet(config.accounts.DEPLOYER_PRIVATE_KEY, this.l1Provider)
 		}
 
-		const l1Addresses = [
-			config.accounts.L1_COMMIT_SENDER_ADDR,
-			config.accounts.L1_FINALIZE_SENDER_ADDR,
-			config.accounts.L1_GAS_ORACLE_SENDER_ADDR,
-		]
+		if (flags['fund-deployer']) {
+			await this.fundDeployer(config.accounts.DEPLOYER_ADDR, flags)
+		} else {
+			const l1Addresses = [
+				config.accounts.L1_COMMIT_SENDER_ADDR,
+				config.accounts.L1_FINALIZE_SENDER_ADDR,
+				config.accounts.L1_GAS_ORACLE_SENDER_ADDR,
+			]
 
-		const l2Addresses = [
-			config.accounts.L2_GAS_ORACLE_SENDER_ADDR,
-		]
+			const l2Addresses = [
+				config.accounts.L2_GAS_ORACLE_SENDER_ADDR,
+			]
 
-		if (flags.account) {
-			l1Addresses.push(flags.account)
-			l2Addresses.push(flags.account)
+			if (flags.account) {
+				l1Addresses.push(flags.account)
+				l2Addresses.push(flags.account)
+			}
+
+			await this.fundL1Addresses(l1Addresses, flags)
+			await this.fundL2Addresses(l2Addresses, flags)
 		}
 
-		await this.fundL1Addresses(l1Addresses, flags)
-		await this.fundL2Addresses(l2Addresses, flags)
-
 		this.log(chalk.green('Funding complete'))
+	}
+
+	private async fundDeployer(deployerAddress: string, flags: any): Promise<void> {
+		this.log(chalk.cyan('\nFunding Deployer Address:'))
+		if (flags.dev) {
+			await this.fundAddressAnvil(this.l1Provider, deployerAddress, 100, Layer.L1)
+		} else {
+			await this.promptManualFunding(deployerAddress, DEPLOYER_FUNDING_AMOUNT, Layer.L1)
+		}
 	}
 
 	private async fundL1Addresses(addresses: string[], flags: any): Promise<void> {
