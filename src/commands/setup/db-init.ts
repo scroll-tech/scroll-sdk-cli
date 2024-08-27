@@ -74,7 +74,7 @@ export default class SetupDbInit extends Command {
     }
 
     const dsnConfigMapping: Record<string, string[]> = {
-      'ROLLUP_NODE': ['SCROLL_DB_CONNECTION_STRING', 'GAS_ORACLE_DB_CONNECTION_STRING', 'ROLLUP_NODE_DB_CONNECTION_STRING', 'ROLLUP_EXPLORER_DB_CONNECTION_STRING'],
+      'ROLLUP_NODE': ['SCROLL_DB_CONNECTION_STRING', 'GAS_ORACLE_DB_CONNECTION_STRING', 'ROLLUP_NODE_DB_CONNECTION_STRING', 'ROLLUP_EXPLORER_DB_CONNECTION_STRING', 'COORDINATOR_DB_CONNECTION_STRING'],
       'BRIDGE_HISTORY': ['BRIDGE_HISTORY_DB_CONNECTION_STRING'],
       'CHAIN_MONITOR': ['CHAIN_MONITOR_DB_CONNECTION_STRING']
     }
@@ -92,9 +92,9 @@ export default class SetupDbInit extends Command {
 
   public async run(): Promise<void> {
     const databases = [
-      { name: 'scroll', user: 'CHAIN_MONITOR' },
-      { name: 'scroll', user: 'ROLLUP_NODE' },
-      { name: 'scroll', user: 'BRIDGE_HISTORY' },
+      { name: 'scroll-chain-monitor', user: 'CHAIN_MONITOR' },
+      { name: 'scroll-rollup', user: 'ROLLUP_NODE' },
+      { name: 'scroll-bridge-history', user: 'BRIDGE_HISTORY' },
     ]
 
     // let publicHost: string, publicPort: string, vpcHost: string, vpcPort: string, pgUser: string, pgPassword: string, pgDatabase: string;
