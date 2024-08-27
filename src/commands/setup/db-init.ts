@@ -46,7 +46,9 @@ export default class SetupDbInit extends Command {
 
       // Add permissions
       await conn.query(`GRANT CONNECT, CREATE ON DATABASE ${dbName} TO ${dbUser}`)
+      await conn.query(`CREATE SCHEMA IF NOT EXISTS public`)
       await conn.query(`GRANT ALL PRIVILEGES ON SCHEMA public TO ${dbUser}`)
+      await conn.query(`GRANT CONNECT, CREATE ON DATABASE ${dbName} TO ${dbUser}`)
       await conn.query(`GRANT USAGE, SELECT, UPDATE, INSERT ON ALL TABLES IN SCHEMA public TO ${dbUser}`)
       await conn.query(`GRANT CREATE ON SCHEMA public TO ${dbUser}`)
       await conn.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, UPDATE, INSERT ON TABLES TO ${dbUser}`)

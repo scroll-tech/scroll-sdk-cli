@@ -1,4 +1,4 @@
-import { Command } from '@oclif/core'
+import { Command, Flags } from '@oclif/core'
 import * as fs from 'fs'
 import * as path from 'path'
 import { exec } from 'child_process'
@@ -66,6 +66,12 @@ class AWSSecretService implements SecretService {
 }
 
 class HashicorpVaultDevService implements SecretService {
+  private debug: boolean
+
+  constructor(debug: boolean) {
+    this.debug = debug
+  }
+
   private async runCommand(command: string): Promise<string> {
     try {
       const { stdout } = await execAsync(command)
@@ -115,11 +121,12 @@ class HashicorpVaultDevService implements SecretService {
 
     const command = `kubectl exec vault-0 -- vault kv put scroll/${secretName} ${kvPairs}`
 
-    // Debug output
-    console.log(chalk.yellow('--- Debug Output ---'))
-    console.log(chalk.cyan(`Secret Name: ${secretName}`))
-    console.log(chalk.cyan(`Command: ${command}`))
-    console.log(chalk.yellow('-------------------'))
+    if (this.debug) {
+      console.log(chalk.yellow('--- Debug Output ---'))
+      console.log(chalk.cyan(`Secret Name: ${secretName}`))
+      console.log(chalk.cyan(`Command: ${command}`))
+      console.log(chalk.yellow('-------------------'))
+    }
 
     try {
       await this.runCommand(command)
@@ -136,11 +143,12 @@ class HashicorpVaultDevService implements SecretService {
       const escapedJson = JSON.stringify(jsonContent).replace(/'/g, "'\\''");
       const command = `kubectl exec vault-0 -- vault kv put scroll/${secretName} migrate-db.json='${escapedJson}'`;
 
-      // Debug output
-      console.log(chalk.yellow('--- Debug Output ---'));
-      console.log(chalk.cyan(`Secret Name: ${secretName}`));
-      console.log(chalk.cyan(`Command: ${command}`));
-      console.log(chalk.yellow('-------------------'));
+      if (this.debug) {
+        console.log(chalk.yellow('--- Debug Output ---'));
+        console.log(chalk.cyan(`Secret Name: ${secretName}`));
+        console.log(chalk.cyan(`Command: ${command}`));
+        console.log(chalk.yellow('-------------------'));
+      }
 
       await this.runCommand(command);
       console.log(chalk.green(`Successfully pushed JSON secret: scroll/${secretName}`));
@@ -203,7 +211,16 @@ export default class SetupPushSecrets extends Command {
 
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
+    '<%= config.bin %> <%= command.id %> --debug',
   ]
+
+  static override flags = {
+    debug: Flags.boolean({
+      char: 'd',
+      description: 'Show debug output',
+      default: false,
+    }),
+  }
 
   private async getVaultCredentials(): Promise<Record<string, string>> {
     return {
@@ -307,6 +324,8 @@ export default class SetupPushSecrets extends Command {
 
 
   public async run(): Promise<void> {
+    const { flags } = await this.parse(SetupPushSecrets)
+
     this.log(chalk.blue('Starting secret push process...'))
 
     const secretService = await select({
@@ -328,7 +347,7 @@ export default class SetupPushSecrets extends Command {
       service = new AWSSecretService(region)
       provider = 'aws'
     } else if (secretService === 'vault') {
-      service = new HashicorpVaultDevService()
+      service = new HashicorpVaultDevService(flags.debug)
       provider = 'vault'
     } else {
       this.error(chalk.red('Invalid secret service selected'))
