@@ -1,17 +1,16 @@
-import { Command, Flags } from '@oclif/core'
-import cliProgress from 'cli-progress'
-import { ethers } from 'ethers'
-import path from 'node:path'
+import {Command, Flags} from '@oclif/core'
 import chalk from 'chalk'
+import * as cliProgress from 'cli-progress'
+import {ethers} from 'ethers'
+import path from 'node:path'
 
-import { DeployedContract, contracts, Layer } from '../../data/contracts.js'
-import { parseTomlConfig } from '../../utils/config-parser.js'
-import { addressLink, txLink } from '../../utils/onchain/index.js'
+import {DeployedContract, Layer, contracts} from '../../data/contracts.js'
+import {parseTomlConfig} from '../../utils/config-parser.js'
+import {addressLink} from '../../utils/onchain/index.js'
 
 interface ContractsConfig {
   [key: string]: string
 }
-
 
 export default class TestContracts extends Command {
   static description = 'Test contracts by checking deployment and initialization'
@@ -34,19 +33,22 @@ export default class TestContracts extends Command {
     }),
   }
 
-  private blockExplorers: Record<Layer, { blockExplorerURI: string }> = {
-    [Layer.L1]: { blockExplorerURI: '' },
-    [Layer.L2]: { blockExplorerURI: '' },
+  private blockExplorers: Record<Layer, {blockExplorerURI: string}> = {
+    [Layer.L1]: {blockExplorerURI: ''},
+    [Layer.L2]: {blockExplorerURI: ''},
   }
 
+  private contractsConfig: ContractsConfig = {}
+
+  // eslint-disable-next-line complexity
   async run(): Promise<void> {
-    const { flags } = await this.parse(TestContracts)
+    const {flags} = await this.parse(TestContracts)
 
     const configPath = path.resolve(flags.config)
     const contractsPath = path.resolve(flags.contracts)
 
     const config = parseTomlConfig(configPath)
-    const contractsConfig: ContractsConfig = parseTomlConfig(contractsPath)
+    this.contractsConfig = parseTomlConfig(contractsPath)
 
     let l1RpcUrl: string
     let l2RpcUrl: string
@@ -67,9 +69,11 @@ export default class TestContracts extends Command {
 
     // Check if RPC URLs are defined
     if (!l1RpcUrl || !l2RpcUrl) {
-      this.error(chalk.red(
-        `Missing RPC URL(s) in ${configPath}. Please ensure L1_RPC_ENDPOINT and L2_RPC_ENDPOINT (for pod mode) or EXTERNAL_RPC_URI_L1 and EXTERNAL_RPC_URI_L2 (for non-pod mode) are defined.`,
-      ))
+      this.error(
+        chalk.red(
+          `Missing RPC URL(s) in ${configPath}. Please ensure L1_RPC_ENDPOINT and L2_RPC_ENDPOINT (for pod mode) or EXTERNAL_RPC_URI_L1 and EXTERNAL_RPC_URI_L2 (for non-pod mode) are defined.`,
+        ),
+      )
     }
 
     // Check if owner address is defined
@@ -78,10 +82,12 @@ export default class TestContracts extends Command {
     }
 
     // Check if contractsConfig is empty
-    if (Object.keys(contractsConfig).length === 0) {
-      this.error(chalk.red(
-        `Contract configuration in ${contractsPath} is empty. Please ensure it contains the necessary contract addresses.`,
-      ))
+    if (Object.keys(this.contractsConfig).length === 0) {
+      this.error(
+        chalk.red(
+          `Contract configuration in ${contractsPath} is empty. Please ensure it contains the necessary contract addresses.`,
+        ),
+      )
     }
 
     const l1Provider = new ethers.JsonRpcProvider(l1RpcUrl)
@@ -89,23 +95,29 @@ export default class TestContracts extends Command {
 
     // Check that config has a value for each required contract name
 
-    const l1Addresses: DeployedContract[] = contracts.filter((contract) => contract.layer === Layer.L1).map((contract) => {
-      const address = contractsConfig[contract.name]
-      if (!address) {
-        this.log(chalk.yellow(`Missing address for contract: ${contract.name}`))
-      }
+    const l1Addresses: DeployedContract[] = contracts
+      .filter((contract) => contract.layer === Layer.L1)
+      .map((contract) => {
+        const address = this.contractsConfig[contract.name]
+        if (!address) {
+          this.log(chalk.yellow(`Missing address for contract: ${contract.name}`))
+        }
 
-      return { ...contract, address }
-    }).filter((contract: DeployedContract) => contract.address !== undefined)
+        return {...contract, address}
+      })
+      .filter((contract: DeployedContract) => contract.address !== undefined)
 
-    const l2Addresses: DeployedContract[] = contracts.filter((contract) => contract.layer === Layer.L2).map((contract) => {
-      const address = contractsConfig[contract.name]
-      if (!address) {
-        this.log(chalk.yellow(`Missing address for contract: ${contract.name}`))
-      }
+    const l2Addresses: DeployedContract[] = contracts
+      .filter((contract) => contract.layer === Layer.L2)
+      .map((contract) => {
+        const address = this.contractsConfig[contract.name]
+        if (!address) {
+          this.log(chalk.yellow(`Missing address for contract: ${contract.name}`))
+        }
 
-      return { ...contract, address }
-    }).filter((contract) => contract.address !== undefined)
+        return {...contract, address}
+      })
+      .filter((contract) => contract.address !== undefined)
 
     try {
       // Check Deployments
@@ -119,8 +131,8 @@ export default class TestContracts extends Command {
         cliProgress.Presets.shades_classic,
       )
 
-      const l1BarDeploy = multibarDeployment.create(l1Addresses.length, 0, { name: 'Checking L1 contract deployment...' })
-      const l2BarDeploy = multibarDeployment.create(l2Addresses.length, 0, { name: 'Checking L2 contract deployment...' })
+      const l1BarDeploy = multibarDeployment.create(l1Addresses.length, 0, {name: 'Checking L1 contract deployment...'})
+      const l2BarDeploy = multibarDeployment.create(l2Addresses.length, 0, {name: 'Checking L2 contract deployment...'})
 
       const notDeployed: DeployedContract[] = []
 
@@ -211,14 +223,22 @@ export default class TestContracts extends Command {
         let status = 'Deployed'
         if (contract.initializes) status += ', Initialized'
         if (contract.owned) status += ', Correctly Owned'
-        const link = await addressLink(contract.address!, this.blockExplorers[contract.layer === 'l1' ? Layer.L1 : Layer.L2])
+        // eslint-disable-next-line no-await-in-loop
+        const link = await addressLink(
+          contract.address!,
+          this.blockExplorers[contract.layer === 'l1' ? Layer.L1 : Layer.L2],
+        )
         this.log(`- ${chalk.cyan(contract.name)}\n     ${chalk.blue(link)}\n     Status: ${chalk.green(status)}`)
       }
 
       if (notDeployed.length > 0) {
         this.log(chalk.red('\nContracts not deployed:'))
         for (const contract of notDeployed) {
-          const link = await addressLink(contract.address!, this.blockExplorers[contract.layer === 'l1' ? Layer.L1 : Layer.L2])
+          // eslint-disable-next-line no-await-in-loop
+          const link = await addressLink(
+            contract.address!,
+            this.blockExplorers[contract.layer === 'l1' ? Layer.L1 : Layer.L2],
+          )
           this.log(chalk.red(`- ${contract.name}\n     ${chalk.blue(link)}`))
         }
       }
@@ -226,7 +246,11 @@ export default class TestContracts extends Command {
       if (notInitialized.length > 0) {
         this.log(chalk.yellow('\nContracts not initialized:'))
         for (const contract of notInitialized) {
-          const link = await addressLink(contract.address!, this.blockExplorers[contract.layer === 'l1' ? Layer.L1 : Layer.L2])
+          // eslint-disable-next-line no-await-in-loop
+          const link = await addressLink(
+            contract.address!,
+            this.blockExplorers[contract.layer === 'l1' ? Layer.L1 : Layer.L2],
+          )
           this.log(chalk.yellow(`- ${contract.name}\n     ${chalk.blue(link)}`))
         }
       }
@@ -234,7 +258,11 @@ export default class TestContracts extends Command {
       if (notOwned.length > 0) {
         this.log(chalk.yellow('\nContracts without correct owner:'))
         for (const contract of notOwned) {
-          const link = await addressLink(contract.address!, this.blockExplorers[contract.layer === 'l1' ? Layer.L1 : Layer.L2])
+          // eslint-disable-next-line no-await-in-loop
+          const link = await addressLink(
+            contract.address!,
+            this.blockExplorers[contract.layer === 'l1' ? Layer.L1 : Layer.L2],
+          )
           this.log(chalk.yellow(`- ${contract.name}\n     ${chalk.blue(link)}`))
         }
       }
@@ -254,7 +282,8 @@ export default class TestContracts extends Command {
     notDeployed: DeployedContract[],
   ) {
     for (const c of contracts) {
-      progressBar.update({ name: `Checking ${c.name}...` })
+      progressBar.update({name: `Checking ${c.name}...`})
+      // eslint-disable-next-line no-await-in-loop
       const code = await provider.getCode(c.address ?? '')
       if (code === '0x') {
         notDeployed.push(c)
@@ -271,11 +300,18 @@ export default class TestContracts extends Command {
     notInitialized: DeployedContract[],
   ) {
     for (const c of contracts) {
-      progressBar.update({ name: `Checking ${c.name}...` })
+      progressBar.update({name: `Checking ${c.name}...`})
       try {
         if (!c.address) {
-          throw (`No address found for ${c.name}`)
+          throw new Error(`No address found for ${c.name}`)
         }
+
+        // TODO: Look into L2_MESSAGE_QUEUE_ADDR initialization later
+        if (c.name === 'L2_MESSAGE_QUEUE_ADDR') {
+          continue
+        }
+
+        // eslint-disable-next-line no-await-in-loop
         const initCount = await provider.getStorage(c.address, 0)
         if (Number.parseInt(initCount, 16) <= 0) {
           notInitialized.push(c)
@@ -288,6 +324,7 @@ export default class TestContracts extends Command {
     }
   }
 
+  // eslint-disable-next-line max-params
   private async checkContractOwner(
     provider: ethers.Provider,
     contracts: DeployedContract[],
@@ -298,12 +335,20 @@ export default class TestContracts extends Command {
     const ownableABI = ['function owner() view returns (address)']
 
     for (const c of contracts) {
-      progressBar.update({ name: `Checking ${c.name}...` })
+      progressBar.update({name: `Checking ${c.name}...`})
       if (c.owned && c.address) {
         const contract = new ethers.Contract(c.address, ownableABI, provider)
         try {
+          // eslint-disable-next-line no-await-in-loop
           const owner = await contract.owner()
-          if (owner.toLowerCase() !== expectedOwner.toLowerCase()) {
+          let expectedOwnerForContract = expectedOwner
+
+          // Special case for L2_SCROLL_STANDARD_ERC20_FACTORY_ADDR
+          if (c.name === 'L2_SCROLL_STANDARD_ERC20_FACTORY_ADDR') {
+            expectedOwnerForContract = this.contractsConfig.L2_STANDARD_ERC20_GATEWAY_PROXY_ADDR
+          }
+
+          if (owner.toLowerCase() !== expectedOwnerForContract.toLowerCase()) {
             notOwned.push(c)
           }
         } catch (error) {

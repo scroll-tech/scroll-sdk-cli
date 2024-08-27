@@ -61,7 +61,7 @@ export default class TestIngress extends Command {
       this.log(chalk.cyan('\nChecking connectivity to ingress hosts:'))
       for (const [name, host] of Object.entries(actualIngresses)) {
         // eslint-disable-next-line no-await-in-loop
-        const isReachable = await this.checkHost(host)
+        const isReachable = await this.checkHost(host, name)
         if (isReachable) {
           this.log(chalk.green(`- ${name} (${terminalLink(host, `http://${host}`)}) is reachable`))
         } else {
@@ -81,9 +81,29 @@ export default class TestIngress extends Command {
     }
   }
 
-  private async checkHost(host: string): Promise<boolean> {
+  private async checkHost(host: string, name: string): Promise<boolean> {
     try {
-      const response = await fetch(`http://${host}`)
+      let response: Response
+
+      if (name === 'bridge-history-api') {
+        response = await fetch(`http://${host}/api/txs`)
+      } else if (name === 'l1-devnet') {
+        response = await fetch(`http://${host}`, {
+          body: JSON.stringify({
+            id: 1,
+            jsonrpc: '2.0',
+            method: 'web3_clientVersion',
+            params: [],
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
+        })
+      } else {
+        response = await fetch(`http://${host}`)
+      }
+
       return response.status === 200
     } catch {
       return false

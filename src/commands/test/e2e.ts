@@ -1,17 +1,17 @@
-import { Separator, confirm, select } from '@inquirer/prompts'
+import {Separator, confirm, select} from '@inquirer/prompts'
 import {
   // Args,
   Command,
   Flags,
 } from '@oclif/core'
 import chalk from 'chalk'
-import { Wallet, ethers } from 'ethers'
+import {Wallet, ethers} from 'ethers'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import ora from 'ora'
-import { toString as qrCodeToString } from 'qrcode'
+import {toString as qrCodeToString} from 'qrcode'
 
-import { parseTomlConfig } from '../../utils/config-parser.js'
+import {parseTomlConfig} from '../../utils/config-parser.js'
 import {
   BlockExplorerParams,
   Withdrawal,
@@ -45,7 +45,7 @@ enum Layer {
   L2 = 'l2',
 }
 
-const FUNDING_AMOUNT = 0.004
+const FUNDING_AMOUNT = 0.008
 
 // Custom error types
 class WalletFundingError extends Error {
@@ -98,26 +98,26 @@ export default class TestE2e extends Command {
       description: 'Path to configs-contracts.toml file',
     }),
     // eslint-disable-next-line camelcase
-    manual: Flags.boolean({ char: 'm', description: 'Manually fund the test wallet.' }),
+    manual: Flags.boolean({char: 'm', description: 'Manually fund the test wallet.'}),
     pod: Flags.boolean({
       char: 'p',
       default: false,
       description: 'Run inside Kubernetes pod',
     }),
     // eslint-disable-next-line camelcase
-    'private-key': Flags.string({ char: 'k', description: 'Private key for funder wallet initialization' }),
+    'private-key': Flags.string({char: 'k', description: 'Private key for funder wallet initialization'}),
     resume: Flags.boolean({
       char: 'r',
       default: false,
       description: 'Uses e2e_resume.json to continue last run.',
     }),
     // eslint-disable-next-line camelcase
-    'skip-wallet-generation': Flags.boolean({ char: 's', description: 'Manually fund the test wallet.' }),
+    'skip-wallet-generation': Flags.boolean({char: 's', description: 'Manually fund the test wallet.'}),
   }
 
   private blockExplorers: Record<Layer, BlockExplorerParams> = {
-    [Layer.L1]: { blockExplorerURI: '' },
-    [Layer.L2]: { blockExplorerURI: '' },
+    [Layer.L1]: {blockExplorerURI: ''},
+    [Layer.L2]: {blockExplorerURI: ''},
   }
 
   private bridgeApiUrl!: string
@@ -185,17 +185,17 @@ export default class TestE2e extends Command {
       complete: boolean
     }
   } = {
-      bridgeERC20L1ToL2: { complete: false },
-      bridgeERC20L2ToL1: { complete: false },
-      bridgeFundsL1ToL2: { complete: false },
-      bridgeFundsL2ToL1: { complete: false },
-      claimERC20OnL1: { complete: false },
-      claimETHOnL1: { complete: false },
-      deployERC20OnL1: { complete: false },
-      deployERC20OnL2: { complete: false },
-      fundWalletOnL1: { complete: false },
-      fundWalletOnL2: { complete: false },
-    }
+    bridgeERC20L1ToL2: {complete: false},
+    bridgeERC20L2ToL1: {complete: false},
+    bridgeFundsL1ToL2: {complete: false},
+    bridgeFundsL2ToL1: {complete: false},
+    claimERC20OnL1: {complete: false},
+    claimETHOnL1: {complete: false},
+    deployERC20OnL1: {complete: false},
+    deployERC20OnL2: {complete: false},
+    fundWalletOnL1: {complete: false},
+    fundWalletOnL2: {complete: false},
+  }
 
   private resumeFilePath: string | undefined
 
@@ -205,7 +205,7 @@ export default class TestE2e extends Command {
 
   public async run(): Promise<void> {
     try {
-      const { flags } = await this.parse(TestE2e)
+      const {flags} = await this.parse(TestE2e)
 
       const configPath = path.resolve(flags.config)
       const contractsPath = path.resolve(flags.contracts)
@@ -355,7 +355,7 @@ export default class TestE2e extends Command {
 
       // Get L2TokenAddress from L1 Contract Address
       const l2TokenAddress = await getL2TokenFromL1Address(erc20Address, this.l1Rpc, this.l1GatewayRouter)
-      const { l2TxHash, queueIndex } = await getCrossDomainMessageFromTx(
+      const {l2TxHash, queueIndex} = await getCrossDomainMessageFromTx(
         depositTx.hash,
         this.l1Rpc,
         this.l1MessegeQueueProxyAddress,
@@ -390,7 +390,7 @@ export default class TestE2e extends Command {
         throw new Error('ERC20 address not found. Make sure deployERC20OnL1 was successful.')
       }
 
-      this.log(JSON.stringify({ erc20Address, rpc: this.l2Rpc, wallet: this.wallet.address }))
+      this.log(JSON.stringify({erc20Address, rpc: this.l2Rpc, wallet: this.wallet.address}))
 
       const balance = await awaitERC20Balance(this.wallet.address, erc20Address, this.l2Rpc)
 
@@ -436,7 +436,7 @@ export default class TestE2e extends Command {
       )
 
       // Call withdrawERC20
-      const withdrawTx = await l2GatewayRouter.withdrawERC20(erc20Address, halfBalance, 0, { value: 0 })
+      const withdrawTx = await l2GatewayRouter.withdrawERC20(erc20Address, halfBalance, 0, {value: 0})
       await withdrawTx.wait()
 
       this.logResult(`Withdrawal transaction sent: ${withdrawTx.hash}`, 'success')
@@ -469,7 +469,7 @@ export default class TestE2e extends Command {
       // const value = amount + ethers.parseEther(`${gasLimit*l2BaseFee} wei`);
       await this.logAddress(await l1ETHGateway.getAddress(), `Depositing ${amount} by sending ${value} to`, Layer.L1)
 
-      const tx = await l1ETHGateway.depositETH(amount, gasLimit, { value })
+      const tx = await l1ETHGateway.depositETH(amount, gasLimit, {value})
 
       await this.logTx(tx.hash, 'Transaction sent', Layer.L1)
       const receipt = await tx.wait()
@@ -477,7 +477,7 @@ export default class TestE2e extends Command {
 
       this.logResult(`Transaction mined in block: ${chalk.cyan(blockNumber)}`, 'success')
 
-      const { l2TxHash, queueIndex } = await getCrossDomainMessageFromTx(
+      const {l2TxHash, queueIndex} = await getCrossDomainMessageFromTx(
         tx.hash,
         this.l1Rpc,
         this.l1MessegeQueueProxyAddress,
@@ -511,7 +511,7 @@ export default class TestE2e extends Command {
       // const value = amount + ethers.parseEther(`${gasLimit*l2BaseFee} wei`);
       await this.logAddress(await l2ETHGateway.getAddress(), `Withdrawing ${amount} by sending ${value} to`, Layer.L2)
 
-      const tx = await l2ETHGateway.withdrawETH(amount, 0, { value })
+      const tx = await l2ETHGateway.withdrawETH(amount, 0, {value})
       this.results.bridgeFundsL2ToL1.l2WithdrawTx = tx.hash
 
       await this.logTx(tx.hash, 'Transaction sent', Layer.L2)
@@ -726,7 +726,8 @@ export default class TestE2e extends Command {
           withdrawals = await getWithdrawals(this.wallet.address, this.bridgeApiUrl)
         } catch (error) {
           this.logResult(
-            `Warning: Failed to get withdrawals. Continuing... Error: ${error instanceof Error ? error.message : 'Unknown error'
+            `Warning: Failed to get withdrawals. Continuing... Error: ${
+              error instanceof Error ? error.message : 'Unknown error'
             }`,
             'warning',
           )
@@ -781,7 +782,7 @@ export default class TestE2e extends Command {
       // const value = amount + ethers.parseEther(`${gasLimit*l2BaseFee} wei`);
       await this.logAddress(await l1Messenger.getAddress(), `Calling relayMessageWithProof on`, Layer.L1)
 
-      const { from, message, nonce, proof, to, value } = unclaimedWithdrawal.claim_info
+      const {from, message, nonce, proof, to, value} = unclaimedWithdrawal.claim_info
 
       const tx = await l1Messenger.relayMessageWithProof(from, to, value, nonce, message, {
         batchIndex: proof.batch_index,
@@ -871,7 +872,7 @@ export default class TestE2e extends Command {
 
     this.wallet = new ethers.Wallet(privateKey, this.l1Provider)
     await this.logAddress(this.wallet.address, 'Generated new wallet', Layer.L1)
-    this.results.fundWalletOnL1 = { complete: false, generatedPrivateKey: privateKey, walletAddress: this.wallet.address }
+    this.results.fundWalletOnL1 = {complete: false, generatedPrivateKey: privateKey, walletAddress: this.wallet.address}
     this.logResult(`Private Key: ${chalk.yellow(this.wallet.privateKey)}`, 'warning')
   }
 
@@ -1009,13 +1010,13 @@ export default class TestE2e extends Command {
     this.log('\n')
     this.logResult('Scan this QR code to fund the address:', 'info')
 
-    this.log(await qrCodeToString(qrString, { small: true, type: 'terminal' }))
+    this.log(await qrCodeToString(qrString, {small: true, type: 'terminal'}))
 
     let funded = false
 
     while (!funded) {
       // eslint-disable-next-line no-await-in-loop
-      await confirm({ message: 'Press Enter when ready...' })
+      await confirm({message: 'Press Enter when ready...'})
 
       this.logResult(`Checking...`, 'info')
       // Check if wallet is actually funded -- if not, we'll loop.
