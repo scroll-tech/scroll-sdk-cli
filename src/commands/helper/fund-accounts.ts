@@ -1,12 +1,12 @@
-import {confirm, select} from '@inquirer/prompts'
-import {Command, Flags} from '@oclif/core'
+import { confirm, select } from '@inquirer/prompts'
+import { Command, Flags } from '@oclif/core'
 import chalk from 'chalk'
-import {ethers} from 'ethers'
+import { ethers } from 'ethers'
 import path from 'node:path'
-import {toString as qrCodeToString} from 'qrcode'
+import { toString as qrCodeToString } from 'qrcode'
 
-import {parseTomlConfig} from '../../utils/config-parser.js'
-import {addressLink, txLink} from '../../utils/onchain/index.js'
+import { parseTomlConfig } from '../../utils/config-parser.js'
+import { addressLink, txLink } from '../../utils/onchain/index.js'
 
 enum Layer {
   L1 = 'l1',
@@ -14,6 +14,7 @@ enum Layer {
 }
 
 const FUNDING_AMOUNT = 0.008
+const DEPLOYER_FUNDING_AMOUNT = 2
 
 export default class HelperFundAccounts extends Command {
   static description = 'Fund L1 and L2 accounts for contracts'
@@ -54,11 +55,16 @@ export default class HelperFundAccounts extends Command {
       char: 'k',
       description: 'Private key for funder wallet',
     }),
+    'fund-deployer': Flags.boolean({
+      char: 'i',
+      description: 'Fund the deployer address only',
+      default: false,
+    }),
   }
 
-  private blockExplorers: Record<Layer, {blockExplorerURI: string}> = {
-    [Layer.L1]: {blockExplorerURI: ''},
-    [Layer.L2]: {blockExplorerURI: ''},
+  private blockExplorers: Record<Layer, { blockExplorerURI: string }> = {
+    [Layer.L1]: { blockExplorerURI: '' },
+    [Layer.L2]: { blockExplorerURI: '' },
   }
 
   private fundingWallet!: ethers.Wallet
@@ -69,7 +75,7 @@ export default class HelperFundAccounts extends Command {
   private l2Rpc!: string
 
   public async run(): Promise<void> {
-    const {flags} = await this.parse(HelperFundAccounts)
+    const { flags } = await this.parse(HelperFundAccounts)
 
     const configPath = path.resolve(flags.config)
     const config = parseTomlConfig(configPath)
@@ -107,23 +113,36 @@ export default class HelperFundAccounts extends Command {
       this.fundingWallet = new ethers.Wallet(config.accounts.DEPLOYER_PRIVATE_KEY, this.l1Provider)
     }
 
-    const l1Addresses = [
-      config.accounts.L1_COMMIT_SENDER_ADDR,
-      config.accounts.L1_FINALIZE_SENDER_ADDR,
-      config.accounts.L1_GAS_ORACLE_SENDER_ADDR,
-    ]
+    if (flags['fund-deployer']) {
+      await this.fundDeployer(config.accounts.DEPLOYER_ADDR, flags)
+    } else {
+      const l1Addresses = [
+        config.accounts.L1_COMMIT_SENDER_ADDR,
+        config.accounts.L1_FINALIZE_SENDER_ADDR,
+        config.accounts.L1_GAS_ORACLE_SENDER_ADDR,
+      ]
 
-    const l2Addresses = [config.accounts.L2_GAS_ORACLE_SENDER_ADDR]
+      const l2Addresses = [config.accounts.L2_GAS_ORACLE_SENDER_ADDR]
 
-    if (flags.account) {
-      l1Addresses.push(flags.account)
-      l2Addresses.push(flags.account)
+      if (flags.account) {
+        l1Addresses.push(flags.account)
+        l2Addresses.push(flags.account)
+      }
+
+      await this.fundL1Addresses(l1Addresses, flags)
+      await this.fundL2Addresses(l2Addresses)
     }
 
-    await this.fundL1Addresses(l1Addresses, flags)
-    await this.fundL2Addresses(l2Addresses)
-
     this.log(chalk.green('Funding complete'))
+  }
+
+  private async fundDeployer(deployerAddress: string, flags: any): Promise<void> {
+    this.log(chalk.cyan('\nFunding Deployer Address:'))
+    if (flags.dev) {
+      await this.fundAddressAnvil(this.l1Provider, deployerAddress, 100, Layer.L1)
+    } else {
+      await this.promptManualFunding(deployerAddress, DEPLOYER_FUNDING_AMOUNT, Layer.L1)
+    }
   }
 
   private async bridgeFundsL1ToL2(recipient: string, amount: number): Promise<void> {
@@ -145,7 +164,7 @@ export default class HelperFundAccounts extends Command {
         Layer.L1,
       )
 
-      const tx = await l1ETHGateway.depositETH(recipient, ethers.parseEther(amount.toString()), gasLimit, {value})
+      const tx = await l1ETHGateway.depositETH(recipient, ethers.parseEther(amount.toString()), gasLimit, { value })
       await this.logTx(tx.hash, 'Bridge transaction sent', Layer.L1)
 
       const receipt = await tx.wait()
@@ -254,12 +273,12 @@ export default class HelperFundAccounts extends Command {
     this.log('\n')
     this.log('Scan this QR code to fund the address:')
 
-    this.log(await qrCodeToString(qrString, {small: true, type: 'terminal'}))
+    this.log(await qrCodeToString(qrString, { small: true, type: 'terminal' }))
 
     let funded = false
     while (!funded) {
       // eslint-disable-next-line no-await-in-loop
-      await confirm({message: 'Press Enter when ready...'})
+      await confirm({ message: 'Press Enter when ready...' })
       this.log(`Checking...`)
       // eslint-disable-next-line no-await-in-loop
       const balance = await (layer === Layer.L1 ? this.l1Provider : this.l2Provider).getBalance(address)
@@ -277,9 +296,9 @@ export default class HelperFundAccounts extends Command {
   private async promptUserForL2Funding(): Promise<string> {
     const answer = await select({
       choices: [
-        {name: 'Bridge funds from L1', value: 'bridge'},
-        {name: 'Directly fund L2 wallet', value: 'direct'},
-        {name: 'Manual funding', value: 'manual'},
+        { name: 'Bridge funds from L1', value: 'bridge' },
+        { name: 'Directly fund L2 wallet', value: 'direct' },
+        { name: 'Manual funding', value: 'manual' },
       ],
       message: 'How would you like to fund the L2 address?',
     })
