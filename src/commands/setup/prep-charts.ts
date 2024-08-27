@@ -32,7 +32,7 @@ export default class SetupPrepCharts extends Command {
   private charts = [
     'balance-checker', 'blockscout', 'blockscout-sc-verifier', 'bridge-history-api',
     'bridge-history-fetcher', 'chain-monitor', 'contracts', 'coordinator-api',
-    'coordinator-cron', 'frontends', 'l2-bootnode', 'l2-rpc', 'l2-sequencer',
+    'coordinator-cron', 'external-secrets-lib', 'frontends', 'gas-oracle', 'l2-bootnode', 'l2-rpc', 'l2-sequencer',
     'rollup-explorer-backend', 'rollup-node', 'scroll-common', 'scroll-sdk'
   ]
 

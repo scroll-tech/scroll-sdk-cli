@@ -3,6 +3,7 @@ import Docker from 'dockerode';
 import * as fs from 'fs'
 import * as path from 'path'
 import * as toml from '@iarna/toml'
+import chalk from 'chalk'
 
 export default class SetupConfigs extends Command {
   static override description = 'Generate configuration files and create environment files for services'
@@ -64,16 +65,16 @@ export default class SetupConfigs extends Command {
     const secretsPath = path.join(process.cwd(), 'secrets')
     if (!fs.existsSync(secretsPath)) {
       fs.mkdirSync(secretsPath)
-      this.log('Created secrets folder')
+      this.log(chalk.green('Created secrets folder'))
     } else {
-      this.log('Secrets folder already exists')
+      this.log(chalk.yellow('Secrets folder already exists'))
     }
   }
 
   private async createEnvFiles(): Promise<void> {
     const configPath = path.join(process.cwd(), 'config.toml')
     if (!fs.existsSync(configPath)) {
-      this.error('config.toml not found in the current directory.')
+      this.error(chalk.red('config.toml not found in the current directory.'))
       return
     }
 
@@ -89,24 +90,25 @@ export default class SetupConfigs extends Command {
       const envFile = path.join(process.cwd(), 'secrets', `${service}-secret.env`)
       const envContent = this.generateEnvContent(service, config)
       fs.writeFileSync(envFile, envContent)
-      this.log(`Created ${service}-secret.env`)
+      this.log(chalk.green(`Created ${service}-secret.env`))
     }
 
     // Create additional files
     this.createMigrateDbFiles(config)
   }
 
+  // TODO: check privatekey secrets once integrated
   private generateEnvContent(service: string, config: any): string {
     const mapping: Record<string, string[]> = {
       'blockscout': ['BLOCKSCOUT_DB_CONNECTION_STRING:DATABASE_URL'],
       'bridge-history-fetcher': ['BRIDGE_HISTORY_DB_CONNECTION_STRING:DATABASE_URL'],
       'chain-monitor': ['CHAIN_MONITOR_DB_CONNECTION_STRING:DATABASE_URL'],
       'coordinator': ['COORDINATOR_DB_CONNECTION_STRING:DATABASE_URL'],
-      'event-watcher': ['EVENT_WATCHER_DB_CONNECTION_STRING:DATABASE_URL'],
-      'gas-oracle': ['GAS_ORACLE_DB_CONNECTION_STRING:DATABASE_URL', 'L1_GAS_ORACLE_SENDER_PRIVATE_KEY:L1_GAS_ORACLE_SENDER_PRIVATE_KEY', 'L2_GAS_ORACLE_SENDER_PRIVATE_KEY:L2_GAS_ORACLE_SENDER_PRIVATE_KEY'],
+      'event-watcher': ['EVENT_WATCHER_DB_CONNECTION_STRING:DATABASE_URL'], //TODO: remove
+      'gas-oracle': ['GAS_ORACLE_DB_CONNECTION_STRING:DATABASE_URL', 'L1_GAS_ORACLE_SENDER_PRIVATE_KEY:SCROLL_ROLLUP_L1_CONFIG_GAS_ORACLE_SENDER_PRIVATE_KEY', 'L2_GAS_ORACLE_SENDER_PRIVATE_KEY:SCROLL_ROLLUP_L2_CONFIG_GAS_ORACLE_SENDER_PRIVATE_KEY'],
       'l1-explorer': ['L1_EXPLORER_DB_CONNECTION_STRING:DATABASE_URL'],
       'l2-sequencer': ['L2GETH_KEYSTORE:L2GETH_KEYSTORE', 'L2GETH_PASSWORD:L2GETH_PASSWORD', 'L2GETH_NODEKEY:L2GETH_NODEKEY'],
-      'rollup-node': ['ROLLUP_NODE_DB_CONNECTION_STRING:DATABASE_URL', 'L1_COMMIT_SENDER_ADDR:L1_COMMIT_SENDER_ADDR', 'L1_FINALIZE_SENDER_ADDR:L1_FINALIZE_SENDER_ADDR'],
+      'rollup-node': ['ROLLUP_NODE_DB_CONNECTION_STRING:DATABASE_URL', 'L1_COMMIT_SENDER_PRIVATE_KEY:SCROLL_ROLLUP_L2_CONFIG_RELAYER_CONFIG_COMMIT_SENDER_PRIVATE_KEY', 'L1_FINALIZE_SENDER_PRIVATE_KEY:SCROLL_ROLLUP_L2_CONFIG_RELAYER_CONFIG_FINALIZE_SENDER_PRIVATE_KEY'],
     }
 
     let content = ''
@@ -135,20 +137,47 @@ export default class SetupConfigs extends Command {
         dsn: config.db[file.key],
       }, null, 2)
       fs.writeFileSync(filePath, content)
-      this.log(`Created ${file.service}-migrate-db.json`)
+      this.log(chalk.green(`Created ${file.service}-migrate-db.json`))
+    }
+  }
+
+  private copyContractsConfigs(): void {
+    const sourceDir = process.cwd()
+    const targetDir = path.join(sourceDir, 'contracts', 'configs')
+
+    // Ensure the target directory exists
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true })
+    }
+
+    const filesToCopy = ['config.toml', 'config-contracts.toml']
+
+    for (const file of filesToCopy) {
+      const sourcePath = path.join(sourceDir, file)
+      const targetPath = path.join(targetDir, file)
+
+      if (fs.existsSync(sourcePath)) {
+        fs.copyFileSync(sourcePath, targetPath)
+        this.log(chalk.green(`Copied ${file} to contracts/configs/`))
+      } else {
+        this.log(chalk.yellow(`${file} not found in the current directory, skipping.`))
+      }
     }
   }
 
   public async run(): Promise<void> {
-    this.log('Running docker command to generate configs...')
+    this.log(chalk.blue('Running docker command to generate configs...'))
     await this.runDockerCommand()
 
-    this.log('Creating secrets folder...')
+    this.log(chalk.blue('Creating secrets folder...'))
     this.createSecretsFolder()
 
-    this.log('Creating environment files...')
+    this.log(chalk.blue('Copying contract configs...'))
+    this.copyContractsConfigs()
+
+    this.log(chalk.blue('Creating environment files...'))
     await this.createEnvFiles()
 
-    this.log('Configuration setup completed.')
+    this.log(chalk.green('Configuration setup completed.'))
   }
 }
