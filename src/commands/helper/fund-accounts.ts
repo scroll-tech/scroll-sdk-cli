@@ -13,9 +13,6 @@ enum Layer {
   L2 = 'l2',
 }
 
-const FUNDING_AMOUNT = 0.008
-const DEPLOYER_FUNDING_AMOUNT = 2
-
 export default class HelperFundAccounts extends Command {
   static description = 'Fund L1 and L2 accounts for contracts'
 
@@ -59,6 +56,11 @@ export default class HelperFundAccounts extends Command {
       char: 'i',
       description: 'Fund the deployer address only',
       default: false,
+    }),
+    amount: Flags.string({
+      char: 'f',
+      description: 'Amount to fund in ETH',
+      default: '0.1',
     }),
   }
 
@@ -116,21 +118,23 @@ export default class HelperFundAccounts extends Command {
     if (flags['fund-deployer']) {
       await this.fundDeployer(config.accounts.DEPLOYER_ADDR, flags)
     } else {
-      const l1Addresses = [
-        config.accounts.L1_COMMIT_SENDER_ADDR,
-        config.accounts.L1_FINALIZE_SENDER_ADDR,
-        config.accounts.L1_GAS_ORACLE_SENDER_ADDR,
-      ]
+      const l1Addresses: Record<string, string> = {
+        'L1_COMMIT_SENDER': config.accounts.L1_COMMIT_SENDER_ADDR,
+        'L1_FINALIZE_SENDER': config.accounts.L1_FINALIZE_SENDER_ADDR,
+        'L1_GAS_ORACLE_SENDER': config.accounts.L1_GAS_ORACLE_SENDER_ADDR,
+      }
 
-      const l2Addresses = [config.accounts.L2_GAS_ORACLE_SENDER_ADDR]
+      const l2Addresses: Record<string, string> = {
+        'L2_GAS_ORACLE_SENDER': config.accounts.L2_GAS_ORACLE_SENDER_ADDR
+      }
 
       if (flags.account) {
-        l1Addresses.push(flags.account)
-        l2Addresses.push(flags.account)
+        l1Addresses['ADDITIONAL_ACCOUNT'] = flags.account
+        l2Addresses['ADDITIONAL_ACCOUNT'] = flags.account
       }
 
       await this.fundL1Addresses(l1Addresses, flags)
-      await this.fundL2Addresses(l2Addresses)
+      await this.fundL2Addresses(l2Addresses, flags)
     }
 
     this.log(chalk.green('Funding complete'))
@@ -141,13 +145,19 @@ export default class HelperFundAccounts extends Command {
     if (flags.dev) {
       await this.fundAddressAnvil(this.l1Provider, deployerAddress, 100, Layer.L1)
     } else {
-      await this.promptManualFunding(deployerAddress, DEPLOYER_FUNDING_AMOUNT, Layer.L1)
+      await this.promptManualFunding(deployerAddress, Number(flags.amount), Layer.L1)
     }
   }
 
   private async bridgeFundsL1ToL2(recipient: string, amount: number): Promise<void> {
     try {
       this.log(chalk.cyan(`Bridging funds from L1 to L2 for recipient: ${recipient}`))
+
+      if (!this.fundingWallet.provider) {
+        throw new Error('Funding wallet provider is not initialized');
+      }
+
+      const initialFunderBalance = await this.fundingWallet.provider.getBalance(this.fundingWallet.address)
 
       const gasLimit = BigInt(170_000)
       const value = ethers.parseEther((amount + 0.001).toString())
@@ -169,6 +179,12 @@ export default class HelperFundAccounts extends Command {
 
       const receipt = await tx.wait()
       this.log(chalk.green(`Transaction mined in block: ${receipt.blockNumber}`))
+
+      const finalFunderBalance = await this.fundingWallet.provider.getBalance(this.fundingWallet.address)
+
+      this.log(chalk.cyan(`Funding wallet balance (L1):`))
+      this.log(chalk.yellow(`  Before: ${ethers.formatEther(initialFunderBalance)} ETH`))
+      this.log(chalk.yellow(`  After:  ${ethers.formatEther(finalFunderBalance)} ETH`))
 
       this.log(
         chalk.yellow(`Funds are being bridged to ${recipient}. Please wait for the transaction to be processed on L2.`),
@@ -192,60 +208,79 @@ export default class HelperFundAccounts extends Command {
 
   private async fundAddressNetwork(provider: ethers.JsonRpcProvider, address: string, amount: number, layer: Layer) {
     try {
+      if (!this.fundingWallet.provider) {
+        throw new Error('Funding wallet provider is not initialized');
+      }
+
+      const initialFunderBalance = await this.fundingWallet.provider.getBalance(this.fundingWallet.address)
+      const initialRecipientBalance = await provider.getBalance(address)
+
       const tx = await this.fundingWallet.sendTransaction({
         to: address,
         value: ethers.parseEther(amount.toString()),
       })
       await tx.wait()
       await this.logTx(tx.hash, `Funded ${address} with ${amount} ETH`, layer)
+
+      const finalFunderBalance = await this.fundingWallet.provider.getBalance(this.fundingWallet.address)
+      const finalRecipientBalance = await provider.getBalance(address)
+
+      this.log(chalk.cyan(`Funding wallet balance:`))
+      this.log(chalk.yellow(`  Before: ${ethers.formatEther(initialFunderBalance)} ETH`))
+      this.log(chalk.yellow(`  After:  ${ethers.formatEther(finalFunderBalance)} ETH`))
+      this.log(chalk.cyan(`Recipient wallet balance:`))
+      this.log(chalk.yellow(`  Before: ${ethers.formatEther(initialRecipientBalance)} ETH`))
+      this.log(chalk.yellow(`  After:  ${ethers.formatEther(finalRecipientBalance)} ETH`))
     } catch (error) {
       this.error(`Failed to fund ${address} (${layer}): ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async fundL1Addresses(addresses: string[], flags: any): Promise<void> {
+  private async fundL1Addresses(addresses: Record<string, string>, flags: any): Promise<void> {
     this.log(chalk.cyan('\nFunding L1 Addresses:'))
-    for (const address of addresses) {
+    for (const [contractName, address] of Object.entries(addresses)) {
       if (!address) {
-        this.warn(`Address not found in config for one of the L1 accounts`)
+        this.warn(`Address not found in config for ${contractName}`)
         continue
       }
 
+      this.log(chalk.blue(`Funding ${contractName}:`))
+
       if (flags.dev) {
         // eslint-disable-next-line no-await-in-loop
-        await this.fundAddressAnvil(this.l1Provider, address, FUNDING_AMOUNT, Layer.L1)
+        await this.fundAddressAnvil(this.l1Provider, address, Number(flags.amount), Layer.L1)
       } else if (flags.manual) {
         // eslint-disable-next-line no-await-in-loop
-        await this.promptManualFunding(address, FUNDING_AMOUNT, Layer.L1)
+        await this.promptManualFunding(address, Number(flags.amount), Layer.L1)
       } else {
         // eslint-disable-next-line no-await-in-loop
-        await this.fundAddressNetwork(this.l1Provider, address, FUNDING_AMOUNT, Layer.L1)
+        await this.fundAddressNetwork(this.l1Provider, address, Number(flags.amount), Layer.L1)
       }
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async fundL2Addresses(addresses: string[]): Promise<void> {
+  private async fundL2Addresses(addresses: Record<string, string>, flags: any): Promise<void> {
     this.log(chalk.cyan('\nFunding L2 Addresses:'))
-    for (const address of addresses) {
+    for (const [contractName, address] of Object.entries(addresses)) {
       if (!address) {
-        this.warn(`Address not found in config for one of the L2 accounts`)
+        this.warn(`Address not found in config for ${contractName}`)
         continue
       }
+
+      this.log(chalk.blue(`Funding ${contractName}:`))
 
       // eslint-disable-next-line no-await-in-loop
       const fundingMethod = await this.promptUserForL2Funding()
 
       if (fundingMethod === 'bridge') {
         // eslint-disable-next-line no-await-in-loop
-        await this.bridgeFundsL1ToL2(address, FUNDING_AMOUNT)
+        await this.bridgeFundsL1ToL2(address, Number(flags.amount))
       } else if (fundingMethod === 'direct') {
         // eslint-disable-next-line no-await-in-loop
-        await this.fundAddressNetwork(this.l2Provider, address, FUNDING_AMOUNT, Layer.L2)
+        await this.fundAddressNetwork(this.l2Provider, address, Number(flags.amount), Layer.L2)
       } else {
         // eslint-disable-next-line no-await-in-loop
-        await this.promptManualFunding(address, FUNDING_AMOUNT, Layer.L2)
+        await this.promptManualFunding(address, Number(flags.amount), Layer.L2)
       }
     }
   }

@@ -60,6 +60,7 @@ export default class SetupPrepCharts extends Command {
     'L1_RPC_ENDPOINT': 'general.L1_RPC_ENDPOINT',
     'L2_RPC_ENDPOINT': 'general.L2_RPC_ENDPOINT',
     'L1_SCROLL_CHAIN_PROXY_ADDR': 'contracts.L1_SCROLL_CHAIN_PROXY_ADDR',
+    'L2GETH_PEER_LIST': 'sequencer.L2_GETH_STATIC_PEERS'
     // Add more mappings as needed
   }
 

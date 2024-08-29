@@ -283,28 +283,39 @@ export default class SetupPushSecrets extends Command {
         let updated = false
         if (yamlContent.externalSecrets) {
           for (const [secretName, secret] of Object.entries(yamlContent.externalSecrets) as [string, any][]) {
-            if (secret.provider === provider) {
-              if (provider === 'vault') {
-                secret.server = credentials.server
-                secret.path = credentials.path
-                secret.version = credentials.version
-                secret.tokenSecretName = credentials.tokenSecretName
-                secret.tokenSecretKey = credentials.tokenSecretKey
-              } else {
-                secret.serviceAccount = credentials.serviceAccount
-                secret.secretRegion = credentials.secretRegion
-              }
+            if (secret.provider !== provider) {
+              secret.provider = provider
+              updated = true
+            }
 
-              // Update remoteRef for migrate-db secrets
-              if (secretName.endsWith('-migrate-db')) {
-                for (const data of secret.data) {
-                  if (data.remoteRef && data.remoteRef.key && data.secretKey === 'migrate-db.json') {
-                    data.remoteRef.property = 'migrate-db.json'
-                  }
+            if (provider === 'vault') {
+              secret.server = credentials.server
+              secret.path = credentials.path
+              secret.version = credentials.version
+              secret.tokenSecretName = credentials.tokenSecretName
+              secret.tokenSecretKey = credentials.tokenSecretKey
+              delete secret.serviceAccount
+              delete secret.secretRegion
+              updated = true
+            } else {
+              secret.serviceAccount = credentials.serviceAccount
+              secret.secretRegion = credentials.secretRegion
+              delete secret.server
+              delete secret.path
+              delete secret.version
+              delete secret.tokenSecretName
+              delete secret.tokenSecretKey
+              updated = true
+            }
+
+            // Update remoteRef for migrate-db secrets
+            if (secretName.endsWith('-migrate-db')) {
+              for (const data of secret.data) {
+                if (data.remoteRef && data.remoteRef.key && data.secretKey === 'migrate-db.json') {
+                  data.remoteRef.property = 'migrate-db.json'
+                  updated = true
                 }
               }
-
-              updated = true
             }
           }
         }
