@@ -1,7 +1,7 @@
-import {Command, Flags} from '@oclif/core'
+import { Command, Flags } from '@oclif/core'
 import chalk from 'chalk'
-import {exec} from 'node:child_process'
-import {promisify} from 'node:util'
+import { exec } from 'node:child_process'
+import { promisify } from 'node:util'
 
 const execAsync = promisify(exec)
 
@@ -9,21 +9,22 @@ export default class TestDependencies extends Command {
   static override description = 'Check for required dependencies'
 
   static override flags = {
-    dev: Flags.boolean({char: 'd', description: 'Include development dependencies'}),
+    dev: Flags.boolean({ char: 'd', description: 'Include development dependencies' }),
   }
 
   public async run(): Promise<void> {
-    const {flags} = await this.parse(TestDependencies)
+    const { flags } = await this.parse(TestDependencies)
 
     const dependencies = [
-      {command: 'docker --version', name: 'Docker'},
-      {command: 'kubectl version --client', name: 'Kubectl'},
-      {command: 'minikube version', name: 'Minikube'},
-      {command: 'helm version --short', name: 'Helm'},
+      { command: 'docker --version', name: 'Docker' },
+      { command: 'kubectl version --client', name: 'Kubectl' },
+      { command: 'helm version --short', name: 'Helm' },
     ]
 
     if (flags.dev) {
-      dependencies.push({command: 'cast --version', name: 'Cast'})
+      dependencies.push(
+        { command: 'minikube version', name: 'Minikube' }
+      )
     }
 
     let allFound = true
@@ -75,7 +76,7 @@ export default class TestDependencies extends Command {
   }
 
   private getInstallInstructions(name: string): string {
-    const instructions: {[key: string]: string} = {
+    const instructions: { [key: string]: string } = {
       Cast: 'brew install cast || https://book.getfoundry.sh/getting-started/installation',
       Docker: 'brew install --cask docker || https://docs.docker.com/get-docker/',
       Helm: 'brew install helm || https://helm.sh/docs/intro/install/',

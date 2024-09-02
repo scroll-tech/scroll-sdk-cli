@@ -4,6 +4,8 @@ import { ethers } from 'ethers'
 import path from 'node:path'
 
 import { parseTomlConfig } from '../../utils/config-parser.js'
+import { txLink } from '../../utils/onchain/txLink.js'
+import { BlockExplorerParams } from '../../utils/onchain/constructBlockExplorerUrl.js';
 
 enum Layer {
   L1 = 'l1',
@@ -12,6 +14,9 @@ enum Layer {
 }
 
 export default class HelperActivity extends Command {
+  private providers: Record<Layer, ethers.JsonRpcProvider> = {} as Record<Layer, ethers.JsonRpcProvider>;
+  private rpcUrls: Record<Layer, string> = {} as Record<Layer, string>;
+
   static description = 'Generate transactions on the specified network(s) to produce more blocks'
 
   static flags = {
@@ -22,7 +27,7 @@ export default class HelperActivity extends Command {
     }),
     interval: Flags.integer({
       char: 'i',
-      default: 5,
+      default: 3,
       description: 'Interval between transactions in seconds',
     }),
     layer1: Flags.boolean({
@@ -82,7 +87,6 @@ export default class HelperActivity extends Command {
       this.error('At least one layer must be selected. Use --layer1 --layer2 or --rpc flags.')
     }
 
-    const providers: Record<Layer, ethers.JsonRpcProvider> = {} as Record<Layer, ethers.JsonRpcProvider>
     const wallets: Record<Layer, ethers.Wallet> = {} as Record<Layer, ethers.Wallet>
 
     for (const layer of layers) {
@@ -99,8 +103,9 @@ export default class HelperActivity extends Command {
         this.error(`Missing RPC URL for ${layer.toUpperCase()}. Please check your config file or provide --rpc flag.`)
       }
 
-      // providers[layer] = new ethers.JsonRpcProvider(rpcUrl)
-      wallets[layer] = new ethers.Wallet(privateKey, new ethers.JsonRpcProvider(rpcUrl))
+      this.providers[layer] = new ethers.JsonRpcProvider(rpcUrl);
+      this.rpcUrls[layer] = rpcUrl;
+      wallets[layer] = new ethers.Wallet(privateKey, this.providers[layer])
 
       this.log(rpcUrl)
     }
@@ -137,8 +142,21 @@ export default class HelperActivity extends Command {
         to: recipient,
         value: ethers.parseUnits('0.1', 'gwei'),
       })
-      const receipt = await tx.wait()
-      this.log(chalk.green(`${layer.toUpperCase()} Transaction sent: ${tx.hash} (Block: ${receipt?.blockNumber})`))
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Transaction taking longer than expected')), 5000)
+      );
+
+      try {
+        const receipt = await Promise.race([tx.wait(), timeoutPromise]) as ethers.TransactionReceipt | null;
+        if (receipt) {
+          this.log(chalk.green(`${layer.toUpperCase()} Transaction sent: ${tx.hash} (Block: ${receipt.blockNumber})`))
+        } else {
+          this.log(chalk.yellow(`${layer.toUpperCase()} Transaction sent: ${tx.hash} (Receipt not available)`))
+        }
+      } catch (timeoutError) {
+        this.log(chalk.yellow(`${layer.toUpperCase()} Transaction sent, but taking longer than expected: ${tx.hash}`))
+      }
     } catch (error) {
       this.log(
         chalk.red(
