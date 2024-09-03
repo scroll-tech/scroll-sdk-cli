@@ -3,6 +3,7 @@ import { input, confirm, select } from '@inquirer/prompts'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as toml from '@iarna/toml'
+import chalk from 'chalk'
 
 export default class SetupDomains extends Command {
   static override args = {
@@ -22,7 +23,7 @@ export default class SetupDomains extends Command {
     name: Flags.string({ char: 'n', description: 'name to print' }),
   }
 
-  private async updateConfigFile(domainConfig: Record<string, string>): Promise<void> {
+  private async updateConfigFile(domainConfig: Record<string, string>, ingressConfig: Record<string, string>, generalConfig: Record<string, string>): Promise<void> {
     const configPath = path.join(process.cwd(), 'config.toml')
     if (!fs.existsSync(configPath)) {
       this.error('config.toml not found in the current directory.')
@@ -30,18 +31,101 @@ export default class SetupDomains extends Command {
     }
 
     const configContent = fs.readFileSync(configPath, 'utf-8')
-    const config = toml.parse(configContent)
+    const config = toml.parse(configContent) as toml.JsonMap
 
-    if (!config.frontend) {
-      config.frontend = {}
+    // Ensure sections exist
+    if (!config.frontend) config.frontend = {}
+    if (!config.ingress) config.ingress = {}
+    if (!config.general) config.general = {}
+
+    // Update only the specified keys
+    Object.entries(generalConfig).forEach(([key, value]) => {
+      if (config.general && typeof config.general === 'object') {
+        (config.general as Record<string, unknown>)[key] = value
+      }
+    })
+    Object.entries(domainConfig).forEach(([key, value]) => {
+      if (config.frontend && typeof config.frontend === 'object') {
+        (config.frontend as Record<string, unknown>)[key] = value
+      }
+    })
+    Object.entries(ingressConfig).forEach(([key, value]) => {
+      if (config.ingress && typeof config.ingress === 'object') {
+        (config.ingress as Record<string, unknown>)[key] = value
+      }
+    })
+
+    // Convert the updated config back to TOML string
+    const updatedContent = toml.stringify(config)
+
+    // Merge the updated content with the original content to preserve comments
+    const mergedContent = this.mergeTomlContent(configContent, updatedContent)
+
+    fs.writeFileSync(configPath, mergedContent)
+    this.logSuccess('config.toml has been updated with the new domain configurations.')
+  }
+
+  private mergeTomlContent(original: string, updated: string): string {
+    const originalLines = original.split('\n')
+    const updatedLines = updated.split('\n')
+    const mergedLines: string[] = []
+
+    let originalIndex = 0
+    let updatedIndex = 0
+
+    while (originalIndex < originalLines.length && updatedIndex < updatedLines.length) {
+      const originalLine = originalLines[originalIndex]
+      const updatedLine = updatedLines[updatedIndex]
+
+      if (originalLine.trim().startsWith('#') || originalLine.trim() === '') {
+        // Preserve comments and empty lines from the original file
+        mergedLines.push(originalLine)
+        originalIndex++
+      } else if (originalLine === updatedLine) {
+        // Lines are identical, keep either one
+        mergedLines.push(originalLine)
+        originalIndex++
+        updatedIndex++
+      } else {
+        // Lines differ, use the updated line
+        mergedLines.push(updatedLine)
+        updatedIndex++
+        // Skip original lines until we find a match or reach a new section
+        while (originalIndex < originalLines.length &&
+          !originalLines[originalIndex].includes('=') &&
+          !originalLines[originalIndex].trim().startsWith('[')) {
+          originalIndex++
+        }
+      }
     }
 
-    for (const [key, value] of Object.entries(domainConfig)) {
-      (config.frontend as Record<string, string>)[key] = value
+    // Add any remaining lines from the updated content
+    while (updatedIndex < updatedLines.length) {
+      mergedLines.push(updatedLines[updatedIndex])
+      updatedIndex++
     }
 
-    fs.writeFileSync(configPath, toml.stringify(config as any))
-    this.log('config.toml has been updated with the new domain configurations.')
+    return mergedLines.join('\n')
+  }
+
+  private logSection(title: string) {
+    this.log(chalk.bold.underline(`\n${title}`))
+  }
+
+  private logKeyValue(key: string, value: string) {
+    this.log(`${chalk.cyan(key)} = ${chalk.green(`"${value}"`)}`)
+  }
+
+  private logInfo(message: string) {
+    this.log(chalk.blue(message))
+  }
+
+  private logSuccess(message: string) {
+    this.log(chalk.green(message))
+  }
+
+  private logWarning(message: string) {
+    this.log(chalk.yellow(message))
   }
 
   public async run(): Promise<void> {
@@ -54,16 +138,26 @@ export default class SetupDomains extends Command {
     const configContent = fs.readFileSync(configPath, 'utf-8')
     const config = toml.parse(configContent)
 
-    this.log('Current domain configurations:')
+    this.logSection('Current domain configurations:')
     for (const [key, value] of Object.entries(config.frontend || {})) {
       if (key.includes('URI')) {
-        this.log(`${key} = "${value}"`)
+        this.logKeyValue(key, value as string)
       }
+    }
+
+    this.logSection('Current ingress configurations:')
+    for (const [key, value] of Object.entries(config.ingress || {})) {
+      this.logKeyValue(key, value as string)
     }
 
     const usesPublicL1 = await confirm({ message: 'Are you using a public L1 network?' })
 
     let domainConfig: Record<string, string> = {}
+    let ingressConfig: Record<string, string> = {}
+    let generalConfig: Record<string, string> = {}
+    let sharedEnding = false
+    let urlEnding = ''
+    let protocol = ''
 
     if (usesPublicL1) {
       type L1Network = 'mainnet' | 'sepolia' | 'holesky';
@@ -89,27 +183,59 @@ export default class SetupDomains extends Command {
         holesky: 'https://rpc.ankr.com/eth_holesky',
       }
 
+      const l1ChainIds: Record<L1Network, string> = {
+        mainnet: '1',
+        sepolia: '11155111',
+        holesky: '17000',
+      }
+
       domainConfig.EXTERNAL_EXPLORER_URI_L1 = l1ExplorerUrls[l1Network]
       domainConfig.EXTERNAL_RPC_URI_L1 = l1RpcUrls[l1Network]
 
-      this.log(`Using ${l1Network} network:`)
-      this.log(`L1 Explorer URL: ${domainConfig.EXTERNAL_EXPLORER_URI_L1}`)
-      this.log(`L1 RPC URL: ${domainConfig.EXTERNAL_RPC_URI_L1}`)
+      generalConfig.CHAIN_NAME_L1 = l1Network.charAt(0).toUpperCase() + l1Network.slice(1);
+      generalConfig.CHAIN_ID_L1 = l1ChainIds[l1Network];
+
+      this.logInfo(`Using ${chalk.bold(l1Network)} network:`)
+      this.logKeyValue('L1 Explorer URL', domainConfig.EXTERNAL_EXPLORER_URI_L1)
+      this.logKeyValue('L1 RPC URL', domainConfig.EXTERNAL_RPC_URI_L1)
+      this.logKeyValue('L1 Chain Name', generalConfig.CHAIN_NAME_L1)
+      this.logKeyValue('L1 Chain ID', generalConfig.CHAIN_ID_L1)
+
+      const setL1RpcEndpoint = await confirm({ message: 'Do you want to set custom L1 RPC endpoints for the SDK backend?' })
+
+      if (setL1RpcEndpoint) {
+        generalConfig.L1_RPC_ENDPOINT = await input({
+          message: 'Enter the L1 RPC HTTP endpoint for SDK backend:',
+          default: 'http://l1-devnet:8545',
+        })
+
+        generalConfig.L1_RPC_ENDPOINT_WEBSOCKET = await input({
+          message: 'Enter the L1 RPC WebSocket endpoint for SDK backend:',
+          default: 'ws://l1-devnet:8546',
+        })
+
+        this.logSuccess(`Updated [general] L1_RPC_ENDPOINT = "${generalConfig.L1_RPC_ENDPOINT}"`)
+        this.logSuccess(`Updated [general] L1_RPC_ENDPOINT_WEBSOCKET = "${generalConfig.L1_RPC_ENDPOINT_WEBSOCKET}"`)
+      }
 
       const sharedEnding = await confirm({ message: 'Do you want all L2 external URLs to share a URL ending?' })
 
       if (sharedEnding) {
-        const urlEnding = await input({
-          message: 'Enter the shared URL ending for L2:',
+        urlEnding = await input({
+          message: 'Enter the shared URL ending:',
           default: 'scrollsdk',
         })
 
-        const protocol = await select({
+        protocol = await select({
           message: 'Choose the protocol for the shared URLs:',
           choices: [
             { name: 'HTTP', value: 'http' },
             { name: 'HTTPS', value: 'https' },
           ],
+        })
+
+        const frontendAtRoot = await confirm({
+          message: 'Do you want the frontends to be hosted at the root domain? (No will use a "frontends" subdomain)',
         })
 
         domainConfig = {
@@ -118,6 +244,15 @@ export default class SetupDomains extends Command {
           BRIDGE_API_URI: `${protocol}://bridge-history-api.${urlEnding}/api`,
           ROLLUPSCAN_API_URI: `${protocol}://rollup-explorer-backend.${urlEnding}/api`,
           EXTERNAL_EXPLORER_URI_L2: `${protocol}://l2-explorer.${urlEnding}`,
+        }
+
+        ingressConfig = {
+          FRONTEND_HOST: frontendAtRoot ? urlEnding : `frontends.${urlEnding}`,
+          BRIDGE_HISTORY_API_HOST: `bridge-history-api.${urlEnding}`,
+          ROLLUP_EXPLORER_API_HOST: `rollup-explorer-backend.${urlEnding}`,
+          COORDINATOR_API_HOST: `coordinator-api.${urlEnding}`,
+          RPC_GATEWAY_HOST: `l2-rpc.${urlEnding}`,
+          BLOCKSCOUT_HOST: `blockscout.${urlEnding}`,
         }
       } else {
         domainConfig = {
@@ -141,15 +276,15 @@ export default class SetupDomains extends Command {
         }
       }
     } else {
-      const sharedEnding = await confirm({ message: 'Do you want all external URLs to share a URL ending?' })
+      sharedEnding = await confirm({ message: 'Do you want all external URLs to share a URL ending?' })
 
       if (sharedEnding) {
-        const urlEnding = await input({
+        urlEnding = await input({
           message: 'Enter the shared URL ending:',
           default: 'scrollsdk',
         })
 
-        const protocol = await select({
+        protocol = await select({
           message: 'Choose the protocol for the shared URLs:',
           choices: [
             { name: 'HTTP', value: 'http' },
@@ -165,46 +300,103 @@ export default class SetupDomains extends Command {
           EXTERNAL_EXPLORER_URI_L1: `${protocol}://l1-explorer.${urlEnding}`,
           EXTERNAL_EXPLORER_URI_L2: `${protocol}://l2-explorer.${urlEnding}`,
         }
+
+        ingressConfig = {
+          FRONTEND_HOST: `${urlEnding}`,
+          BRIDGE_HISTORY_API_HOST: `${urlEnding}`,
+          ROLLUP_EXPLORER_API_HOST: `${urlEnding}`,
+          COORDINATOR_API_HOST: `${urlEnding}`,
+          RPC_GATEWAY_HOST: `${urlEnding}`,
+          BLOCKSCOUT_HOST: `${urlEnding}`,
+        }
       } else {
+        // Prompt for protocol first
+        protocol = await select({
+          message: 'Choose the protocol for the URLs:',
+          choices: [
+            { name: 'HTTP', value: 'http' },
+            { name: 'HTTPS', value: 'https' },
+          ],
+        })
+
+        // Prompt for ingress values first
+        ingressConfig = {
+          FRONTEND_HOST: await input({
+            message: 'Enter FRONTEND_HOST:',
+            default: 'frontends.scrollsdk',
+          }),
+          BRIDGE_HISTORY_API_HOST: await input({
+            message: 'Enter BRIDGE_HISTORY_API_HOST:',
+            default: 'bridge-history-api.scrollsdk',
+          }),
+          ROLLUP_EXPLORER_API_HOST: await input({
+            message: 'Enter ROLLUP_EXPLORER_API_HOST:',
+            default: 'rollup-explorer-backend.scrollsdk',
+          }),
+          COORDINATOR_API_HOST: await input({
+            message: 'Enter COORDINATOR_API_HOST:',
+            default: 'coordinator-api.scrollsdk',
+          }),
+          RPC_GATEWAY_HOST: await input({
+            message: 'Enter RPC_GATEWAY_HOST:',
+            default: 'l2-rpc.scrollsdk',
+          }),
+          BLOCKSCOUT_HOST: await input({
+            message: 'Enter BLOCKSCOUT_HOST:',
+            default: 'blockscout.scrollsdk',
+          }),
+        }
+
+        // Now prompt for domain config values, using ingress values as defaults and prepending the selected protocol
         domainConfig = {
           EXTERNAL_RPC_URI_L1: await input({
             message: 'Enter EXTERNAL_RPC_URI_L1:',
-            default: 'http://l1-devnet.scrollsdk',
+            default: `${protocol}://${ingressConfig.RPC_GATEWAY_HOST}`,
           }),
           EXTERNAL_RPC_URI_L2: await input({
             message: 'Enter EXTERNAL_RPC_URI_L2:',
-            default: 'http://l2-rpc.scrollsdk',
+            default: `${protocol}://${ingressConfig.RPC_GATEWAY_HOST}`,
           }),
           BRIDGE_API_URI: await input({
             message: 'Enter BRIDGE_API_URI:',
-            default: 'http://bridge-history-api.scrollsdk/api',
+            default: `${protocol}://${ingressConfig.BRIDGE_HISTORY_API_HOST}/api`,
           }),
           ROLLUPSCAN_API_URI: await input({
             message: 'Enter ROLLUPSCAN_API_URI:',
-            default: 'http://rollup-explorer-backend.scrollsdk/api',
+            default: `${protocol}://${ingressConfig.ROLLUP_EXPLORER_API_HOST}/api`,
           }),
           EXTERNAL_EXPLORER_URI_L1: await input({
             message: 'Enter EXTERNAL_EXPLORER_URI_L1:',
-            default: 'http://l1-explorer.scrollsdk',
+            default: `${protocol}://${ingressConfig.BLOCKSCOUT_HOST}`,
           }),
           EXTERNAL_EXPLORER_URI_L2: await input({
             message: 'Enter EXTERNAL_EXPLORER_URI_L2:',
-            default: 'http://l2-explorer.scrollsdk',
+            default: `${protocol}://${ingressConfig.BLOCKSCOUT_HOST}`,
           }),
         }
       }
     }
 
-    this.log('\nNew domain configurations:')
+    this.logSection('New domain configurations:')
     for (const [key, value] of Object.entries(domainConfig)) {
-      this.log(`${key} = "${value}"`)
+      this.logKeyValue(key, value)
+    }
+
+    this.logSection('New ingress configurations:')
+    for (const [key, value] of Object.entries(ingressConfig)) {
+      this.logKeyValue(key, value)
+    }
+
+    this.logSection('New general configurations:')
+    for (const [key, value] of Object.entries(generalConfig)) {
+      this.logKeyValue(key, value)
     }
 
     const confirmUpdate = await confirm({ message: 'Do you want to update the config.toml file with these new configurations?' })
     if (confirmUpdate) {
-      await this.updateConfigFile(domainConfig)
+      await this.updateConfigFile(domainConfig, ingressConfig, generalConfig)
     } else {
-      this.log('Configuration update cancelled.')
+      this.logWarning('Configuration update cancelled.')
     }
   }
 }

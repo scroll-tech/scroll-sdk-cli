@@ -16,12 +16,24 @@ export default class SetupConfigs extends Command {
 
   private async runDockerCommand(): Promise<void> {
     const docker = new Docker();
-    const image = 'scrolltech/scroll-stack-contracts:gen-configs-v0.0.16';
+    const image = 'scrolltech/scroll-stack-contracts:gen-configs-v0.0.18';
 
     try {
+      this.log(chalk.cyan("Pulling Docker Image..."))
       // Pull the image if it doesn't exist locally
-      await docker.pull(image);
+      const pullStream = await docker.pull(image);
+      await new Promise((resolve, reject) => {
+        docker.modem.followProgress(pullStream, (err, res) => {
+          if (err) {
+            reject(err);
+          } else {
+            this.log(chalk.green('Image pulled successfully'));
+            resolve(res);
+          }
+        });
+      });
 
+      this.log(chalk.cyan("Creating Docker Container..."))
       // Create and run the container
       const container = await docker.createContainer({
         Image: image,
@@ -31,6 +43,7 @@ export default class SetupConfigs extends Command {
         },
       });
 
+      this.log(chalk.cyan("Starting Container"))
       await container.start();
 
       // Wait for the container to finish and get the logs
@@ -110,7 +123,7 @@ export default class SetupConfigs extends Command {
       'coordinator-cron': ['COORDINATOR_DB_CONNECTION_STRING:SCROLL_COORDINATOR_DB_DSN', 'COORDINATOR_JWT_SECRET_KEY:SCROLL_COORDINATOR_AUTH_SECRET'],
       'gas-oracle': ['GAS_ORACLE_DB_CONNECTION_STRING:SCROLL_ROLLUP_DB_CONFIG_DSN', 'L1_GAS_ORACLE_SENDER_PRIVATE_KEY:SCROLL_ROLLUP_L1_CONFIG_RELAYER_CONFIG_GAS_ORACLE_SENDER_PRIVATE_KEY', 'L2_GAS_ORACLE_SENDER_PRIVATE_KEY:SCROLL_ROLLUP_L2_CONFIG_RELAYER_CONFIG_GAS_ORACLE_SENDER_PRIVATE_KEY'],
       'l1-explorer': ['L1_EXPLORER_DB_CONNECTION_STRING:DATABASE_URL'],
-      'l2-sequencer': ['L2GETH_KEYSTORE:L2GETH_KEYSTORE', 'L2GETH_PASSWORD:L2GETH_PASSWORD', 'L2GETH_NODEKEY:L2GETH_NODEKEY'],
+      'l2-sequencer': ['L2GETH_KEYSTORE:L2GETH_KEYSTORE_1', 'L2GETH_PASSWORD:L2GETH_PASSWORD_1', 'L2GETH_NODEKEY:L2GETH_NODEKEY_1'],
       'rollup-node': ['ROLLUP_NODE_DB_CONNECTION_STRING:SCROLL_ROLLUP_DB_CONFIG_DSN', 'L1_COMMIT_SENDER_PRIVATE_KEY:SCROLL_ROLLUP_L2_CONFIG_RELAYER_CONFIG_COMMIT_SENDER_PRIVATE_KEY', 'L1_FINALIZE_SENDER_PRIVATE_KEY:SCROLL_ROLLUP_L2_CONFIG_RELAYER_CONFIG_FINALIZE_SENDER_PRIVATE_KEY'],
     }
 
@@ -325,14 +338,14 @@ export default class SetupConfigs extends Command {
     }
 
     const updateEnode = await confirm({
-      message: 'Would you like to update the SEQUENCER_ENODE in config.toml using the L2GETH_NODEKEY?'
+      message: 'Would you like to update the L2_GETH_STATIC_PEERS in config.toml using the L2GETH_NODEKEY?'
     })
 
     if (updateEnode) {
       const enodeId = this.nodeKeyToEnodeId(nodeKey)
       const host = await input({
         message: 'Enter the host for the enode:',
-        default: 'l2-sequencer'
+        default: 'l2-sequencer-1'
       })
       const port = await input({
         message: 'Enter the port for the enode:',
@@ -348,9 +361,9 @@ export default class SetupConfigs extends Command {
       (config.sequencer as any).L2_GETH_STATIC_PEERS = enodeList
 
       fs.writeFileSync(configPath, toml.stringify(config as any))
-      this.log(chalk.green(`SEQUENCER_ENODE updated in config.toml: ${enodeList}`))
+      this.log(chalk.green(`L2_GETH_STATIC_PEERS updated in config.toml: ${enodeList}`))
     } else {
-      this.log(chalk.yellow('SEQUENCER_ENODE not updated'))
+      this.log(chalk.yellow('L2_GETH_STATIC_PEERS not updated'))
     }
   }
 

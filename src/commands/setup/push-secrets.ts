@@ -74,11 +74,20 @@ class HashicorpVaultDevService implements SecretService {
 
   private async runCommand(command: string): Promise<string> {
     try {
-      const { stdout } = await execAsync(command)
+      const { stdout } = await execAsync(`kubectl exec vault-0 -- ${command}`)
       return stdout.trim()
     } catch (error) {
       console.error(chalk.red(`Error: ${error}`))
       throw error
+    }
+  }
+
+  private async isVaultPodRunning(): Promise<boolean> {
+    try {
+      await execAsync('kubectl get pod vault-0')
+      return true
+    } catch (error) {
+      return false
     }
   }
 
@@ -105,7 +114,7 @@ class HashicorpVaultDevService implements SecretService {
 
   private async isSecretEngineEnabled(path: string): Promise<boolean> {
     try {
-      const output = await this.runCommand(`kubectl exec vault-0 -- vault secrets list -format=json`)
+      const output = await this.runCommand(`vault secrets list -format=json`)
       const secretsList = JSON.parse(output)
       return path + '/' in secretsList
     } catch (error) {
@@ -119,7 +128,7 @@ class HashicorpVaultDevService implements SecretService {
       .map(([key, value]) => `${key}='${value.replace(/'/g, "'\\''")}'`)
       .join(' ')
 
-    const command = `kubectl exec vault-0 -- vault kv put scroll/${secretName} ${kvPairs}`
+    const command = `vault kv put scroll/${secretName} ${kvPairs}`
 
     if (this.debug) {
       console.log(chalk.yellow('--- Debug Output ---'))
@@ -141,7 +150,7 @@ class HashicorpVaultDevService implements SecretService {
     try {
       const jsonContent = JSON.parse(content);
       const escapedJson = JSON.stringify(jsonContent).replace(/'/g, "'\\''");
-      const command = `kubectl exec vault-0 -- vault kv put scroll/${secretName} migrate-db.json='${escapedJson}'`;
+      const command = `vault kv put scroll/${secretName} migrate-db.json='${escapedJson}'`;
 
       if (this.debug) {
         console.log(chalk.yellow('--- Debug Output ---'));
@@ -159,12 +168,21 @@ class HashicorpVaultDevService implements SecretService {
   }
 
   async pushSecrets(): Promise<void> {
+    if (!(await this.isVaultPodRunning())) {
+      console.log(chalk.yellow('Vault pod is not running. Please install Vault using the following commands:'))
+      console.log(chalk.cyan('helm repo add hashicorp https://helm.releases.hashicorp.com'))
+      console.log(chalk.cyan('helm repo update'))
+      console.log(chalk.cyan('helm install vault hashicorp/vault --set "server.dev.enabled=true"'))
+      console.log(chalk.yellow('After installing Vault, please run this command again.'))
+      return
+    }
+
     // Check if the KV secrets engine is already enabled
     const isEnabled = await this.isSecretEngineEnabled('scroll')
     if (!isEnabled) {
       // Enable the KV secrets engine only if it's not already enabled
       try {
-        await this.runCommand("kubectl exec vault-0 -- vault secrets enable -path=scroll kv-v2")
+        await this.runCommand("vault secrets enable -path=scroll kv-v2")
         console.log(chalk.green("KV secrets engine enabled at path 'scroll'"))
       } catch (error: unknown) {
         if (error instanceof Error) {
@@ -275,60 +293,72 @@ export default class SetupPushSecrets extends Command {
     }
 
     for (const chart of charts) {
-      const yamlPath = path.join(process.cwd(), chart, 'values', 'production.yaml')
-      if (fs.existsSync(yamlPath)) {
-        const content = fs.readFileSync(yamlPath, 'utf8')
-        const yamlContent = yaml.load(content) as any
+      let yamlPath: string
+      if (chart === 'l2-bootnode' || chart === 'l2-sequencer') {
+        yamlPath = path.join(process.cwd(), chart, 'values', 'production-1.yaml')
+        if (!fs.existsSync(yamlPath)) {
+          this.log(chalk.yellow(`production-1.yaml not found for ${chart}`))
+          continue
+        }
+        this.log(chalk.cyan(`Using production-1.yaml for ${chart}`))
+      } else {
+        yamlPath = path.join(process.cwd(), chart, 'values', 'production.yaml')
+        if (!fs.existsSync(yamlPath)) {
+          this.log(chalk.yellow(`production.yaml not found for ${chart}`))
+          continue
+        }
+        this.log(chalk.cyan(`Using production.yaml for ${chart}`))
+      }
 
-        let updated = false
-        if (yamlContent.externalSecrets) {
-          for (const [secretName, secret] of Object.entries(yamlContent.externalSecrets) as [string, any][]) {
-            if (secret.provider !== provider) {
-              secret.provider = provider
-              updated = true
-            }
+      const content = fs.readFileSync(yamlPath, 'utf8')
+      const yamlContent = yaml.load(content) as any
 
-            if (provider === 'vault') {
-              secret.server = credentials.server
-              secret.path = credentials.path
-              secret.version = credentials.version
-              secret.tokenSecretName = credentials.tokenSecretName
-              secret.tokenSecretKey = credentials.tokenSecretKey
-              delete secret.serviceAccount
-              delete secret.secretRegion
-              updated = true
-            } else {
-              secret.serviceAccount = credentials.serviceAccount
-              secret.secretRegion = credentials.secretRegion
-              delete secret.server
-              delete secret.path
-              delete secret.version
-              delete secret.tokenSecretName
-              delete secret.tokenSecretKey
-              updated = true
-            }
+      let updated = false
+      if (yamlContent.externalSecrets) {
+        for (const [secretName, secret] of Object.entries(yamlContent.externalSecrets) as [string, any][]) {
+          if (secret.provider !== provider) {
+            secret.provider = provider
+            updated = true
+          }
 
-            // Update remoteRef for migrate-db secrets
-            if (secretName.endsWith('-migrate-db')) {
-              for (const data of secret.data) {
-                if (data.remoteRef && data.remoteRef.key && data.secretKey === 'migrate-db.json') {
-                  data.remoteRef.property = 'migrate-db.json'
-                  updated = true
-                }
+          if (provider === 'vault') {
+            secret.server = credentials.server
+            secret.path = credentials.path
+            secret.version = credentials.version
+            secret.tokenSecretName = credentials.tokenSecretName
+            secret.tokenSecretKey = credentials.tokenSecretKey
+            delete secret.serviceAccount
+            delete secret.secretRegion
+            updated = true
+          } else {
+            secret.serviceAccount = credentials.serviceAccount
+            secret.secretRegion = credentials.secretRegion
+            delete secret.server
+            delete secret.path
+            delete secret.version
+            delete secret.tokenSecretName
+            delete secret.tokenSecretKey
+            updated = true
+          }
+
+          // Update remoteRef for migrate-db secrets
+          if (secretName.endsWith('-migrate-db')) {
+            for (const data of secret.data) {
+              if (data.remoteRef && data.remoteRef.key && data.secretKey === 'migrate-db.json') {
+                data.remoteRef.property = 'migrate-db.json'
+                updated = true
               }
             }
           }
         }
+      }
 
-        if (updated) {
-          const newContent = yaml.dump(yamlContent, { lineWidth: -1, noRefs: true, quotingType: '"', forceQuotes: true })
-          fs.writeFileSync(yamlPath, newContent)
-          this.log(chalk.green(`Updated externalSecrets provider in ${chalk.cyan(chart)}/values/production.yaml`))
-        } else {
-          this.log(chalk.yellow(`No changes needed in ${chalk.cyan(chart)}/values/production.yaml`))
-        }
+      if (updated) {
+        const newContent = yaml.dump(yamlContent, { lineWidth: -1, noRefs: true, quotingType: '"', forceQuotes: true })
+        fs.writeFileSync(yamlPath, newContent)
+        this.log(chalk.green(`Updated externalSecrets provider in ${chalk.cyan(chart)}/values/${path.basename(yamlPath)}`))
       } else {
-        this.log(chalk.yellow(`${chalk.cyan(chart)}/values/production.yaml not found, skipping`))
+        this.log(chalk.yellow(`No changes needed in ${chalk.cyan(chart)}/values/${path.basename(yamlPath)}`))
       }
     }
   }
@@ -369,15 +399,14 @@ export default class SetupPushSecrets extends Command {
       this.log(chalk.green('Secrets pushed successfully'))
 
       const shouldUpdateYaml = await confirm({
-        message: chalk.cyan('Do you want to update the production.yaml files with the new secret provider?'),
+        message: chalk.cyan('Do you want to update the production YAML files with the new secret provider?'),
       })
 
       if (shouldUpdateYaml) {
         await this.updateProductionYaml(provider)
         this.log(chalk.green('Production YAML files updated successfully'))
-        this.log(chalk.green('Contracts configs copied successfully'))
       } else {
-        this.log(chalk.yellow('Skipped updating production YAML files and copying contracts configs'))
+        this.log(chalk.yellow('Skipped updating production YAML files'))
       }
 
       this.log(chalk.blue('Secret push process completed.'))

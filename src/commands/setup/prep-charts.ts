@@ -56,11 +56,11 @@ export default class SetupPrepCharts extends Command {
     'CHAIN_ID_L2': 'general.CHAIN_ID_L2',
     'L2GETH_L1_ENDPOINT': 'general.L1_RPC_ENDPOINT',
     'L2GETH_L1_CONTRACT_DEPLOYMENT_BLOCK': 'general.L1_CONTRACT_DEPLOYMENT_BLOCK',
-    'L2GETH_SIGNER_ADDRESS': 'accounts.L2GETH_SIGNER_ADDRESS',
     'L1_RPC_ENDPOINT': 'general.L1_RPC_ENDPOINT',
     'L2_RPC_ENDPOINT': 'general.L2_RPC_ENDPOINT',
     'L1_SCROLL_CHAIN_PROXY_ADDR': 'contracts.L1_SCROLL_CHAIN_PROXY_ADDR',
-    'L2GETH_PEER_LIST': 'sequencer.L2_GETH_STATIC_PEERS'
+    'L2GETH_SIGNER_ADDRESS': 'sequencer.L2GETH_SIGNER_ADDRESS',
+    'L2GETH_PEER_LIST': 'sequencer.L2_GETH_STATIC_PEERS',
     // Add more mappings as needed
   }
 
@@ -147,13 +147,24 @@ export default class SetupPrepCharts extends Command {
   }
 
   private async processProductionYaml(chartDir: string, config: any): Promise<boolean> {
-    const productionYamlPath = path.join(process.cwd(), chartDir, 'values', 'production.yaml')
-    if (!fs.existsSync(productionYamlPath)) {
-      this.log(chalk.yellow(`production.yaml not found for ${chartDir}`))
-      return false
+    let yamlPath: string
+    if (chartDir === 'l2-bootnode' || chartDir === 'l2-sequencer') {
+      yamlPath = path.join(process.cwd(), chartDir, 'values', 'production-1.yaml')
+      if (!fs.existsSync(yamlPath)) {
+        this.log(chalk.yellow(`production-1.yaml not found for ${chartDir}`))
+        return false
+      }
+      this.log(chalk.cyan(`Using production-1.yaml for ${chartDir}`))
+    } else {
+      yamlPath = path.join(process.cwd(), chartDir, 'values', 'production.yaml')
+      if (!fs.existsSync(yamlPath)) {
+        this.log(chalk.yellow(`production.yaml not found for ${chartDir}`))
+        return false
+      }
+      this.log(chalk.cyan(`Using production.yaml for ${chartDir}`))
     }
 
-    const productionYamlContent = fs.readFileSync(productionYamlPath, 'utf8')
+    const productionYamlContent = fs.readFileSync(yamlPath, 'utf8')
     const productionYaml = yaml.load(productionYamlContent) as any
 
     let updated = false
@@ -195,15 +206,10 @@ export default class SetupPrepCharts extends Command {
       const configKey = this.chartToConfigMapping[chartDir]
       if (configKey) {
         const configValue = this.getConfigValue(configKey, config)
-        const domainEnding = this.getConfigValue('frontend.DOMAIN_ENDING', config)
 
         for (const host of productionYaml.ingress.main.hosts) {
           let newHost: string
-          if (configKey === 'frontend.DOMAIN_ENDING' && domainEnding) {
-            // For charts that should use DOMAIN_ENDING
-            const parts = host.host.split('.')
-            newHost = `${parts[0]}.${domainEnding}`
-          } else if (configValue) {
+          if (configValue) {
             try {
               const url = new URL(configValue)
               newHost = url.host
@@ -225,7 +231,7 @@ export default class SetupPrepCharts extends Command {
     }
 
     if (updated || emptyUnmappedKeys.length > 0) {
-      this.log(`\nFor ${chalk.cyan(chartDir)}/values/production.yaml:`)
+      this.log(`\nFor ${chalk.cyan(chartDir)}/values/${path.basename(yamlPath)}:`)
 
       if (changes.length > 0) {
         this.log(chalk.green('Changes:'))
@@ -242,7 +248,7 @@ export default class SetupPrepCharts extends Command {
       }
 
       if (updated) {
-        const shouldUpdate = await confirm({ message: 'Do you want to apply these changes?' })
+        const shouldUpdate = await confirm({ message: `Do you want to apply these changes to ${path.basename(yamlPath)}?` })
         if (shouldUpdate) {
           // Use a custom YAML.dump function with specific options
           const yamlString = yaml.dump(productionYaml, {
@@ -252,15 +258,15 @@ export default class SetupPrepCharts extends Command {
             forceQuotes: true,
           });
 
-          fs.writeFileSync(productionYamlPath, yamlString)
-          this.log(chalk.green(`Updated production.yaml for ${chartDir}`))
+          fs.writeFileSync(yamlPath, yamlString)
+          this.log(chalk.green(`Updated ${path.basename(yamlPath)} for ${chartDir}`))
           return true
         } else {
-          this.log(chalk.yellow(`Skipped updating production.yaml for ${chartDir}`))
+          this.log(chalk.yellow(`Skipped updating ${path.basename(yamlPath)} for ${chartDir}`))
         }
       }
     } else {
-      this.log(chalk.yellow(`${chartDir}: No changes needed in production.yaml`))
+      this.log(chalk.yellow(`${chartDir}: No changes needed in ${path.basename(yamlPath)}`))
     }
 
     return false

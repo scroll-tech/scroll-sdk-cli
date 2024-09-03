@@ -14,6 +14,7 @@ export default class SetupDbInit extends Command {
     '<%= config.bin %> <%= command.id %> --update-permissions',
     '<%= config.bin %> <%= command.id %> --update-permissions --debug',
     '<%= config.bin %> <%= command.id %> --clean',
+    '<%= config.bin %> <%= command.id %> --update-db-port=25061',
   ]
 
   static override flags = {
@@ -31,6 +32,10 @@ export default class SetupDbInit extends Command {
       char: 'c',
       description: 'Delete existing database and user before creating new ones',
       default: false,
+    }),
+    'update-port': Flags.integer({
+      description: 'Update the port of current database values',
+      required: false,
     }),
   }
 
@@ -180,8 +185,60 @@ export default class SetupDbInit extends Command {
     }
   }
 
+  private updateDatabasePort(config: any, newPort: number): void {
+    const dbSection = config.db as Record<string, string>
+    if (!dbSection) {
+      this.log(chalk.yellow('No database configurations found in config.toml'))
+      return
+    }
+
+    let changes = false
+    for (const [key, value] of Object.entries(dbSection)) {
+      if (typeof value === 'string' && value.includes('postgres://')) {
+        const updatedValue = value.replace(/:\d+\//, `:${newPort}/`)
+        if (updatedValue !== value) {
+          dbSection[key] = updatedValue
+          changes = true
+          this.log(chalk.blue(`Updated ${key}:`))
+          this.log(chalk.red(`- ${value}`))
+          this.log(chalk.green(`+ ${updatedValue}`))
+        }
+      }
+    }
+
+    if (!changes) {
+      this.log(chalk.yellow('No database configurations were updated'))
+    }
+  }
+
   public async run(): Promise<void> {
     const { flags } = await this.parse(SetupDbInit)
+
+    const configPath = path.join(process.cwd(), 'config.toml')
+    if (!fs.existsSync(configPath)) {
+      this.error(chalk.red('config.toml not found in the current directory.'))
+      return
+    }
+
+    const configContent = fs.readFileSync(configPath, 'utf-8')
+    const config = toml.parse(configContent)
+
+    if (flags['update-port']) {
+      this.log(chalk.blue('Updating database port...'))
+      this.updateDatabasePort(config, flags['update-port'])
+
+      const confirmUpdate = await confirm({
+        message: 'Do you want to update the config.toml file with these changes?'
+      })
+
+      if (confirmUpdate) {
+        fs.writeFileSync(configPath, toml.stringify(config as any))
+        this.log(chalk.green('config.toml has been updated with the new database port.'))
+      } else {
+        this.log(chalk.yellow('Configuration update cancelled.'))
+      }
+      return
+    }
 
     if (flags.clean) {
       const confirmClean = await confirm({
