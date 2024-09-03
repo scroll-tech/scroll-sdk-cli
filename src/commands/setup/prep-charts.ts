@@ -37,14 +37,12 @@ export default class SetupPrepCharts extends Command {
   ]
 
   private chartToConfigMapping: Record<string, string> = {
-    'rollup-explorer-backend': 'frontend.ROLLUPSCAN_API_URI',
-    'frontends': 'frontend.DOMAIN_ENDING',
-    'coordinator-api': 'frontend.DOMAIN_ENDING',
-    'bridge-history-api': 'frontend.BRIDGE_API_URI',
-    'l2-explorer': 'frontend.EXTERNAL_EXPLORER_URI_L2',
-    'l1-explorer': 'frontend.EXTERNAL_EXPLORER_URI_L1',
-    'l2-rpc': 'frontend.EXTERNAL_RPC_URI_L2',
-    'blockscout': 'frontend.EXTERNAL_EXPLORER_URI_L2'
+    'rollup-explorer-backend': 'ingress.ROLLUP_EXPLORER_API_HOST',
+    'frontends': 'ingress.FRONTEND_HOST',
+    'coordinator-api': 'ingress.COORDINATOR_API_HOST',
+    'bridge-history-api': 'ingress.BRIDGE_HISTORY_API_HOST',
+    'l2-rpc': 'ingress.RPC_GATEWAY_HOST',
+    'blockscout': 'ingress.BLOCKSCOUT_HOST'
     // Add more mappings as needed, using 'frontend.DOMAIN_ENDING' for charts that should use it
   }
 
@@ -207,23 +205,11 @@ export default class SetupPrepCharts extends Command {
       if (configKey) {
         const configValue = this.getConfigValue(configKey, config)
 
-        for (const host of productionYaml.ingress.main.hosts) {
-          let newHost: string
-          if (configValue) {
-            try {
-              const url = new URL(configValue)
-              newHost = url.host
-            } catch (error) {
-              // If configValue is not a valid URL, use it as is
-              newHost = configValue
-            }
-          } else {
-            newHost = host.host
-          }
-
-          if (newHost !== host.host) {
-            changes.push({ key: host.host, oldValue: host.host, newValue: newHost })
-            host.host = newHost
+        if (configValue && productionYaml.ingress.main.hosts[0]) {
+          const oldHost = productionYaml.ingress.main.hosts[0].host
+          if (oldHost !== configValue) {  // Only update if there's an actual change
+            productionYaml.ingress.main.hosts[0].host = configValue
+            changes.push({ key: 'ingress.main.hosts[0].host', oldValue: oldHost, newValue: configValue })
             updated = true
           }
         }

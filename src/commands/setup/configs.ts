@@ -138,8 +138,6 @@ export default class SetupConfigs extends Command {
         content += `${envKey}="${config.coordinator[configKey]}"\n`
       } else if (config.sequencer && config.sequencer[configKey]) {
         content += `${envKey}="${config.sequencer[configKey]}"\n`
-      } else if (config.redis && config.redis[configKey]) {
-        content += `${envKey}="${config.redis[configKey]}"\n`
       }
     }
     return content
