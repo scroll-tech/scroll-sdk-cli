@@ -1269,7 +1269,9 @@ export default class TestE2e extends Command {
       }
 
       this.logSection('Deploying an ERC20 on L2')
-      if (this.results.deployERC20OnL2.complete) {
+      if (this.altGasTokenEnabled) {
+        this.logResult('Skipping in alternative gas token mode', 'info')
+      } else if (this.results.deployERC20OnL2.complete) {
         this.logResult('Skipping section...', 'info')
       } else {
         await this.deployERC20OnL2()

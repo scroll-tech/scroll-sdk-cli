@@ -16,7 +16,7 @@ export default class SetupConfigs extends Command {
 
   private async runDockerCommand(): Promise<void> {
     const docker = new Docker();
-    const image = 'scrolltech/scroll-stack-contracts:gen-configs-v0.0.18';
+    const image = 'scrolltech/scroll-stack-contracts:gen-configs-v0.0.19';
 
     try {
       this.log(chalk.cyan("Pulling Docker Image..."))
