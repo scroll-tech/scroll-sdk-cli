@@ -204,15 +204,23 @@ export default class SetupDomains extends Command {
       const setL1RpcEndpoint = await confirm({ message: 'Do you want to set custom L1 RPC endpoints for the SDK backend?' })
 
       if (setL1RpcEndpoint) {
-        generalConfig.L1_RPC_ENDPOINT = await input({
-          message: 'Enter the L1 RPC HTTP endpoint for SDK backend:',
-          default: 'http://l1-devnet:8545',
-        })
+        const generalConfig = config.general as Record<string, unknown>;
 
-        generalConfig.L1_RPC_ENDPOINT_WEBSOCKET = await input({
+        const l1RpcEndpoint = await input({
+          message: 'Enter the L1 RPC HTTP endpoint for SDK backend:',
+          default: typeof generalConfig.L1_RPC_ENDPOINT === 'string'
+            ? generalConfig.L1_RPC_ENDPOINT
+            : 'http://l1-devnet:8545',
+        });
+        generalConfig.L1_RPC_ENDPOINT = l1RpcEndpoint;
+
+        const l1RpcEndpointWebsocket = await input({
           message: 'Enter the L1 RPC WebSocket endpoint for SDK backend:',
-          default: 'ws://l1-devnet:8546',
-        })
+          default: typeof generalConfig.L1_RPC_ENDPOINT_WEBSOCKET === 'string'
+            ? generalConfig.L1_RPC_ENDPOINT_WEBSOCKET
+            : 'ws://l1-devnet:8546',
+        });
+        generalConfig.L1_RPC_ENDPOINT_WEBSOCKET = l1RpcEndpointWebsocket;
 
         this.logSuccess(`Updated [general] L1_RPC_ENDPOINT = "${generalConfig.L1_RPC_ENDPOINT}"`)
         this.logSuccess(`Updated [general] L1_RPC_ENDPOINT_WEBSOCKET = "${generalConfig.L1_RPC_ENDPOINT_WEBSOCKET}"`)
