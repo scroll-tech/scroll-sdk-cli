@@ -20,7 +20,7 @@ $ npm install -g scroll-sdk-cli
 $ scrollsdk COMMAND
 running command...
 $ scrollsdk (--version)
-scroll-sdk-cli/0.0.2 linux-x64 node-v20.11.0
+scroll-sdk-cli/0.0.3 linux-x64 node-v20.11.0
 $ scrollsdk --help [COMMAND]
 USAGE
   $ scrollsdk COMMAND
@@ -31,7 +31,7 @@ USAGE
 <!-- commands -->
 * [`scrollsdk help [COMMAND]`](#scrollsdk-help-command)
 * [`scrollsdk helper activity`](#scrollsdk-helper-activity)
-* [`scrollsdk helper fund-contracts`](#scrollsdk-helper-fund-contracts)
+* [`scrollsdk helper fund-accounts`](#scrollsdk-helper-fund-accounts)
 * [`scrollsdk plugins`](#scrollsdk-plugins)
 * [`scrollsdk plugins add PLUGIN`](#scrollsdk-plugins-add-plugin)
 * [`scrollsdk plugins:inspect PLUGIN...`](#scrollsdk-pluginsinspect-plugin)
@@ -42,6 +42,13 @@ USAGE
 * [`scrollsdk plugins uninstall [PLUGIN]`](#scrollsdk-plugins-uninstall-plugin)
 * [`scrollsdk plugins unlink [PLUGIN]`](#scrollsdk-plugins-unlink-plugin)
 * [`scrollsdk plugins update`](#scrollsdk-plugins-update)
+* [`scrollsdk setup configs`](#scrollsdk-setup-configs)
+* [`scrollsdk setup db-init`](#scrollsdk-setup-db-init)
+* [`scrollsdk setup domains [FILE]`](#scrollsdk-setup-domains-file)
+* [`scrollsdk setup gas-token`](#scrollsdk-setup-gas-token)
+* [`scrollsdk setup gen-keystore`](#scrollsdk-setup-gen-keystore)
+* [`scrollsdk setup prep-charts`](#scrollsdk-setup-prep-charts)
+* [`scrollsdk setup push-secrets`](#scrollsdk-setup-push-secrets)
 * [`scrollsdk test contracts`](#scrollsdk-test-contracts)
 * [`scrollsdk test dependencies`](#scrollsdk-test-dependencies)
 * [`scrollsdk test e2e`](#scrollsdk-test-e2e)
@@ -77,7 +84,7 @@ USAGE
 
 FLAGS
   -c, --config=<value>      [default: ./config.toml] Path to config.toml file
-  -i, --interval=<value>    [default: 5] Interval between transactions in seconds
+  -i, --interval=<value>    [default: 3] Interval between transactions in seconds
   -k, --privateKey=<value>  Private key (overrides config)
   -o, --layer1              Generate activity on Layer 1
   -p, --pod                 Run inside Kubernetes pod
@@ -89,22 +96,28 @@ DESCRIPTION
   Generate transactions on the specified network(s) to produce more blocks
 ```
 
-_See code: [src/commands/helper/activity.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.2/src/commands/helper/activity.ts)_
+_See code: [src/commands/helper/activity.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/helper/activity.ts)_
 
-## `scrollsdk helper fund-contracts`
+## `scrollsdk helper fund-accounts`
 
 Fund L1 and L2 accounts for contracts
 
 ```
 USAGE
-  $ scrollsdk helper fund-contracts [-a <value>] [-c <value>] [-o <value>] [-t <value>] [-d] [-p] [-m] [-k <value>]
+  $ scrollsdk helper fund-accounts [-a <value>] [-c <value>] [-n <value>] [-d] [-o <value>] [-t <value>] [-m] [-p] [-k
+    <value>] [-i] [-f <value>] [-l 1|2]
 
 FLAGS
   -a, --account=<value>      Additional account to fund
   -c, --config=<value>       [default: ./config.toml] Path to config.toml file
   -d, --dev                  Use Anvil devnet funding logic
+  -f, --amount=<value>       [default: 0.1] Amount to fund in ETH
+  -i, --fund-deployer        Fund the deployer address only
   -k, --private-key=<value>  Private key for funder wallet
+  -l, --layer=<option>       Specify layer to fund (1 for L1, 2 for L2)
+                             <options: 1|2>
   -m, --manual               Manually fund the accounts
+  -n, --contracts=<value>    [default: ./config-contracts.toml] Path to configs-contracts.toml file
   -o, --l1rpc=<value>        L1 RPC URL
   -p, --pod                  Run inside Kubernetes pod
   -t, --l2rpc=<value>        L2 RPC URL
@@ -113,7 +126,7 @@ DESCRIPTION
   Fund L1 and L2 accounts for contracts
 ```
 
-_See code: [src/commands/helper/fund-contracts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.2/src/commands/helper/fund-contracts.ts)_
+_See code: [src/commands/helper/fund-accounts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/helper/fund-accounts.ts)_
 
 ## `scrollsdk plugins`
 
@@ -404,6 +417,165 @@ DESCRIPTION
 
 _See code: [@oclif/plugin-plugins](https://github.com/oclif/plugin-plugins/blob/v5.4.4/src/commands/plugins/update.ts)_
 
+## `scrollsdk setup configs`
+
+Generate configuration files and create environment files for services
+
+```
+USAGE
+  $ scrollsdk setup configs
+
+DESCRIPTION
+  Generate configuration files and create environment files for services
+
+EXAMPLES
+  $ scrollsdk setup configs
+```
+
+_See code: [src/commands/setup/configs.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/setup/configs.ts)_
+
+## `scrollsdk setup db-init`
+
+Initialize databases with new users and passwords interactively or update permissions
+
+```
+USAGE
+  $ scrollsdk setup db-init [-u] [-d] [-c] [--update-port <value>]
+
+FLAGS
+  -c, --clean                Delete existing database and user before creating new ones
+  -d, --debug                Show debug output including SQL queries
+  -u, --update-permissions   Update permissions for existing users
+      --update-port=<value>  Update the port of current database values
+
+DESCRIPTION
+  Initialize databases with new users and passwords interactively or update permissions
+
+EXAMPLES
+  $ scrollsdk setup db-init
+
+  $ scrollsdk setup db-init --update-permissions
+
+  $ scrollsdk setup db-init --update-permissions --debug
+
+  $ scrollsdk setup db-init --clean
+
+  $ scrollsdk setup db-init --update-db-port=25061
+```
+
+_See code: [src/commands/setup/db-init.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/setup/db-init.ts)_
+
+## `scrollsdk setup domains [FILE]`
+
+Set up domain configurations for external services
+
+```
+USAGE
+  $ scrollsdk setup domains [FILE] [-f] [-n <value>]
+
+ARGUMENTS
+  FILE  file to read
+
+FLAGS
+  -f, --force
+  -n, --name=<value>  name to print
+
+DESCRIPTION
+  Set up domain configurations for external services
+
+EXAMPLES
+  $ scrollsdk setup domains
+```
+
+_See code: [src/commands/setup/domains.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/setup/domains.ts)_
+
+## `scrollsdk setup gas-token`
+
+Set up gas token configurations
+
+```
+USAGE
+  $ scrollsdk setup gas-token
+
+DESCRIPTION
+  Set up gas token configurations
+
+EXAMPLES
+  $ scrollsdk setup gas-token
+```
+
+_See code: [src/commands/setup/gas-token.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/setup/gas-token.ts)_
+
+## `scrollsdk setup gen-keystore`
+
+Generate keystore and account keys for L2 Geth
+
+```
+USAGE
+  $ scrollsdk setup gen-keystore [--accounts]
+
+FLAGS
+  --[no-]accounts  Generate account key pairs
+
+DESCRIPTION
+  Generate keystore and account keys for L2 Geth
+
+EXAMPLES
+  $ scrollsdk setup gen-keystore
+
+  $ scrollsdk setup gen-keystore --no-accounts
+```
+
+_See code: [src/commands/setup/gen-keystore.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/setup/gen-keystore.ts)_
+
+## `scrollsdk setup prep-charts`
+
+Prepare Helm charts for Scroll SDK
+
+```
+USAGE
+  $ scrollsdk setup prep-charts [--github-username <value>] [--github-token <value>] [--pull]
+
+FLAGS
+  --github-token=<value>     GitHub Personal Access Token
+  --github-username=<value>  GitHub username
+  --[no-]pull                Pull and untar charts
+
+DESCRIPTION
+  Prepare Helm charts for Scroll SDK
+
+EXAMPLES
+  $ scrollsdk setup prep-charts
+
+  $ scrollsdk setup prep-charts --github-username=your-username --github-token=your-token
+
+  $ scrollsdk setup prep-charts --no-pull
+```
+
+_See code: [src/commands/setup/prep-charts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/setup/prep-charts.ts)_
+
+## `scrollsdk setup push-secrets`
+
+Push secrets to the selected secret service
+
+```
+USAGE
+  $ scrollsdk setup push-secrets [-d]
+
+FLAGS
+  -d, --debug  Show debug output
+
+DESCRIPTION
+  Push secrets to the selected secret service
+
+EXAMPLES
+  $ scrollsdk setup push-secrets
+
+  $ scrollsdk setup push-secrets --debug
+```
+
+_See code: [src/commands/setup/push-secrets.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/setup/push-secrets.ts)_
+
 ## `scrollsdk test contracts`
 
 Test contracts by checking deployment and initialization
@@ -421,7 +593,7 @@ DESCRIPTION
   Test contracts by checking deployment and initialization
 ```
 
-_See code: [src/commands/test/contracts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.2/src/commands/test/contracts.ts)_
+_See code: [src/commands/test/contracts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/test/contracts.ts)_
 
 ## `scrollsdk test dependencies`
 
@@ -438,7 +610,7 @@ DESCRIPTION
   Check for required dependencies
 ```
 
-_See code: [src/commands/test/dependencies.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.2/src/commands/test/dependencies.ts)_
+_See code: [src/commands/test/dependencies.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/test/dependencies.ts)_
 
 ## `scrollsdk test e2e`
 
@@ -461,11 +633,11 @@ DESCRIPTION
   Test contracts by checking deployment and initialization
 ```
 
-_See code: [src/commands/test/e2e.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.2/src/commands/test/e2e.ts)_
+_See code: [src/commands/test/e2e.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/test/e2e.ts)_
 
 ## `scrollsdk test ingress`
 
-Check for required ingress hosts
+Check for required ingress hosts and validate frontend URLs
 
 ```
 USAGE
@@ -477,8 +649,8 @@ FLAGS
   -n, --namespace=<value>  [default: default] Kubernetes namespace
 
 DESCRIPTION
-  Check for required ingress hosts
+  Check for required ingress hosts and validate frontend URLs
 ```
 
-_See code: [src/commands/test/ingress.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.2/src/commands/test/ingress.ts)_
+_See code: [src/commands/test/ingress.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.3/src/commands/test/ingress.ts)_
 <!-- commandsstop -->
