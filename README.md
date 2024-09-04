@@ -20,7 +20,7 @@ $ npm install -g scroll-sdk-cli
 $ scrollsdk COMMAND
 running command...
 $ scrollsdk (--version)
-scroll-sdk-cli/0.0.6 linux-x64 node-v20.11.0
+scroll-sdk-cli/0.0.7 linux-x64 node-v20.11.0
 $ scrollsdk --help [COMMAND]
 USAGE
   $ scrollsdk COMMAND
@@ -98,7 +98,7 @@ DESCRIPTION
   Generate transactions on the specified network(s) to produce more blocks
 ```
 
-_See code: [src/commands/helper/activity.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/helper/activity.ts)_
+_See code: [src/commands/helper/activity.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/helper/activity.ts)_
 
 ## `scrollsdk helper derive-enode NODEKEY`
 
@@ -118,7 +118,7 @@ EXAMPLES
   $ scrollsdk helper derive-enode 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
-_See code: [src/commands/helper/derive-enode.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/helper/derive-enode.ts)_
+_See code: [src/commands/helper/derive-enode.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/helper/derive-enode.ts)_
 
 ## `scrollsdk helper fund-accounts`
 
@@ -148,7 +148,7 @@ DESCRIPTION
   Fund L1 and L2 accounts for contracts
 ```
 
-_See code: [src/commands/helper/fund-accounts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/helper/fund-accounts.ts)_
+_See code: [src/commands/helper/fund-accounts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/helper/fund-accounts.ts)_
 
 ## `scrollsdk plugins`
 
@@ -454,7 +454,7 @@ EXAMPLES
   $ scrollsdk setup configs
 ```
 
-_See code: [src/commands/setup/configs.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/setup/configs.ts)_
+_See code: [src/commands/setup/configs.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/setup/configs.ts)_
 
 ## `scrollsdk setup db-init`
 
@@ -485,7 +485,7 @@ EXAMPLES
   $ scrollsdk setup db-init --update-db-port=25061
 ```
 
-_See code: [src/commands/setup/db-init.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/setup/db-init.ts)_
+_See code: [src/commands/setup/db-init.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/setup/db-init.ts)_
 
 ## `scrollsdk setup domains [FILE]`
 
@@ -509,7 +509,7 @@ EXAMPLES
   $ scrollsdk setup domains
 ```
 
-_See code: [src/commands/setup/domains.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/setup/domains.ts)_
+_See code: [src/commands/setup/domains.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/setup/domains.ts)_
 
 ## `scrollsdk setup gas-token`
 
@@ -526,7 +526,7 @@ EXAMPLES
   $ scrollsdk setup gas-token
 ```
 
-_See code: [src/commands/setup/gas-token.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/setup/gas-token.ts)_
+_See code: [src/commands/setup/gas-token.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/setup/gas-token.ts)_
 
 ## `scrollsdk setup gen-keystore`
 
@@ -548,7 +548,7 @@ EXAMPLES
   $ scrollsdk setup gen-keystore --no-accounts
 ```
 
-_See code: [src/commands/setup/gen-keystore.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/setup/gen-keystore.ts)_
+_See code: [src/commands/setup/gen-keystore.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/setup/gen-keystore.ts)_
 
 ## `scrollsdk setup prep-charts`
 
@@ -574,7 +574,7 @@ EXAMPLES
   $ scrollsdk setup prep-charts --no-pull
 ```
 
-_See code: [src/commands/setup/prep-charts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/setup/prep-charts.ts)_
+_See code: [src/commands/setup/prep-charts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/setup/prep-charts.ts)_
 
 ## `scrollsdk setup push-secrets`
 
@@ -596,7 +596,7 @@ EXAMPLES
   $ scrollsdk setup push-secrets --debug
 ```
 
-_See code: [src/commands/setup/push-secrets.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/setup/push-secrets.ts)_
+_See code: [src/commands/setup/push-secrets.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/setup/push-secrets.ts)_
 
 ## `scrollsdk setup tls`
 
@@ -618,7 +618,7 @@ EXAMPLES
   $ scrollsdk setup tls --debug
 ```
 
-_See code: [src/commands/setup/tls.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/setup/tls.ts)_
+_See code: [src/commands/setup/tls.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/setup/tls.ts)_
 
 ## `scrollsdk test contracts`
 
@@ -637,7 +637,7 @@ DESCRIPTION
   Test contracts by checking deployment and initialization
 ```
 
-_See code: [src/commands/test/contracts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/test/contracts.ts)_
+_See code: [src/commands/test/contracts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/test/contracts.ts)_
 
 ## `scrollsdk test dependencies`
 
@@ -654,7 +654,7 @@ DESCRIPTION
   Check for required dependencies
 ```
 
-_See code: [src/commands/test/dependencies.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/test/dependencies.ts)_
+_See code: [src/commands/test/dependencies.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/test/dependencies.ts)_
 
 ## `scrollsdk test e2e`
 
@@ -677,7 +677,7 @@ DESCRIPTION
   Test contracts by checking deployment and initialization
 ```
 
-_See code: [src/commands/test/e2e.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/test/e2e.ts)_
+_See code: [src/commands/test/e2e.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/test/e2e.ts)_
 
 ## `scrollsdk test ingress`
 
@@ -696,5 +696,5 @@ DESCRIPTION
   Check for required ingress hosts and validate frontend URLs
 ```
 
-_See code: [src/commands/test/ingress.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.6/src/commands/test/ingress.ts)_
+_See code: [src/commands/test/ingress.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.7/src/commands/test/ingress.ts)_
 <!-- commandsstop -->
