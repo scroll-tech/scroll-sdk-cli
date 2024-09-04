@@ -14,7 +14,7 @@ interface SecretService {
 }
 
 class AWSSecretService implements SecretService {
-  constructor(private region: string) { }
+  constructor(private region: string, private prefixName: string) { }
 
   private async convertToJson(filePath: string): Promise<string> {
     const content = await fs.promises.readFile(filePath, 'utf-8')
@@ -33,12 +33,12 @@ class AWSSecretService implements SecretService {
   }
 
   private async pushToAWSSecret(content: string, secretName: string): Promise<void> {
-    const command = `aws secretsmanager create-secret --name "scroll/${secretName}" --secret-string '${content}' --region ${this.region}`
+    const command = `aws secretsmanager create-secret --name "${this.prefixName}/${secretName}" --secret-string '${content}' --region ${this.region}`
     try {
       await execAsync(command)
-      console.log(chalk.green(`Successfully pushed secret: scroll/${secretName}`))
+      console.log(chalk.green(`Successfully pushed secret: ${this.prefixName}/${secretName}`))
     } catch (error) {
-      console.error(chalk.red(`Failed to push secret: scroll/${secretName}`))
+      console.error(chalk.red(`Failed to push secret: ${this.prefixName}/${secretName}`))
     }
   }
 
@@ -273,6 +273,10 @@ export default class SetupPushSecrets extends Command {
       secretRegion: await input({
         message: chalk.cyan('Enter AWS secret region:'),
         default: "us-west-2"
+      }),
+      prefixName: await input({
+        message: chalk.cyan('Enter secret prefix name:'),
+        default: "scroll"
       })
     }
   }
@@ -381,11 +385,8 @@ export default class SetupPushSecrets extends Command {
     let provider: string
 
     if (secretService === 'aws') {
-      const region = await input({
-        message: chalk.cyan('Enter AWS region:'),
-        validate: (value) => value.length > 0 || chalk.red('AWS region is required'),
-      })
-      service = new AWSSecretService(region)
+      const awsCredentials = await this.getAWSCredentials()
+      service = new AWSSecretService(awsCredentials.secretRegion, awsCredentials.prefixName)
       provider = 'aws'
     } else if (secretService === 'vault') {
       service = new HashicorpVaultDevService(flags.debug)

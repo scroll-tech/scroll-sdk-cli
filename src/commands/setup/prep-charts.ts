@@ -211,6 +211,19 @@ export default class SetupPrepCharts extends Command {
             productionYaml.ingress.main.hosts[0].host = configValue
             changes.push({ key: 'ingress.main.hosts[0].host', oldValue: oldHost, newValue: configValue })
             updated = true
+
+            // Update TLS section if it exists
+            if (productionYaml.ingress.main.tls && productionYaml.ingress.main.tls.length > 0) {
+              productionYaml.ingress.main.tls.forEach((tlsConfig: any) => {
+                if (tlsConfig.hosts && tlsConfig.hosts.length > 0) {
+                  const oldTlsHost = tlsConfig.hosts[0]
+                  if (oldTlsHost !== configValue) {
+                    tlsConfig.hosts[0] = configValue
+                    changes.push({ key: 'ingress.main.tls[].hosts[0]', oldValue: oldTlsHost, newValue: configValue })
+                  }
+                }
+              })
+            }
           }
         }
       }
