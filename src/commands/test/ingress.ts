@@ -1,23 +1,30 @@
 import * as k8s from '@kubernetes/client-node'
-import {Command, Flags} from '@oclif/core'
+import { Command, Flags } from '@oclif/core'
 import chalk from 'chalk'
 import terminalLink from 'terminal-link'
 
-import {parseTomlConfig} from '../../utils/config-parser.js'
+import { parseTomlConfig } from '../../utils/config-parser.js'
 
 export default class TestIngress extends Command {
-  static override description = 'Check for required ingress hosts'
+  static override description = 'Check for required ingress hosts and validate frontend URLs'
 
   static override flags = {
-    config: Flags.string({char: 'c', description: 'Path to config.toml file'}),
-    dev: Flags.boolean({char: 'd', description: 'Include development ingresses'}),
-    namespace: Flags.string({char: 'n', default: 'default', description: 'Kubernetes namespace'}),
+    config: Flags.string({ char: 'c', description: 'Path to config.toml file' }),
+    dev: Flags.boolean({ char: 'd', description: 'Include development ingresses' }),
+    namespace: Flags.string({ char: 'n', default: 'default', description: 'Kubernetes namespace' }),
   }
 
   private configValues: Record<string, string> = {}
 
+  private frontendToIngressMapping: Record<string, string> = {
+    'EXTERNAL_RPC_URI_L2': 'RPC_GATEWAY_HOST',
+    'BRIDGE_API_URI': 'BRIDGE_HISTORY_API_HOST',
+    'ROLLUPSCAN_API_URI': 'ROLLUP_EXPLORER_API_HOST',
+    'EXTERNAL_EXPLORER_URI_L2': 'BLOCKSCOUT_HOST',
+  }
+
   public async run(): Promise<void> {
-    const {flags} = await this.parse(TestIngress)
+    const { flags } = await this.parse(TestIngress)
 
     if (flags.config) {
       this.loadConfig(flags.config)
@@ -39,10 +46,6 @@ export default class TestIngress extends Command {
     try {
       const actualIngresses = await this.getIngresses(flags.namespace)
 
-      // this.log(chalk.cyan(`Found ingresses in namespace '${flags.namespace}':`))
-      // for (const [name, host] of Object.entries(actualIngresses)) {
-      //   this.log(`- ${chalk.green(name)}: ${terminalLink(host, `http://${host}`)}`)
-      // }
       this.log(chalk.cyan(`List of SDK ingresses found in ${flags.namespace} namespace:`))
       for (const [name, host] of Object.entries(actualIngresses)) {
         this.log(`- ${chalk.green(name)}: ${terminalLink(host, `http://${host}`)}`)
@@ -75,6 +78,7 @@ export default class TestIngress extends Command {
 
       if (Object.keys(this.configValues).length > 0) {
         this.compareWithConfig(actualIngresses)
+        this.validateFrontendIngress(actualIngresses)
       }
     } catch (error) {
       this.error(chalk.red('Failed to retrieve ingresses: ' + error))
@@ -172,6 +176,42 @@ export default class TestIngress extends Command {
       }
     } catch (error) {
       this.error(chalk.red(`Failed to load config file: ${error}`))
+    }
+  }
+
+  private validateFrontendIngress(actualIngresses: Record<string, string>): void {
+    this.log(chalk.cyan('\nValidating frontend URLs against ingress hosts:'))
+
+    let hasDiscrepancy = false
+
+    for (const [frontendKey, ingressKey] of Object.entries(this.frontendToIngressMapping)) {
+      const frontendValue = this.configValues[frontendKey]
+      const ingressValue = actualIngresses[ingressKey.toLowerCase()]
+
+      if (frontendValue && ingressValue) {
+        try {
+          const frontendHost = new URL(frontendValue).host
+          if (frontendHost !== ingressValue) {
+            this.log(chalk.red(`Discrepancy found for ${frontendKey}:`))
+            this.log(chalk.red(`  Frontend value: ${frontendHost}`))
+            this.log(chalk.red(`  Ingress value: ${ingressValue}`))
+            hasDiscrepancy = true
+          } else {
+            this.log(chalk.green(`${frontendKey} matches ${ingressKey}: ${frontendHost}`))
+          }
+        } catch (error) {
+          this.log(chalk.yellow(`Invalid URL for ${frontendKey}: ${frontendValue}`))
+        }
+      } else {
+        this.log(chalk.yellow(`Missing value for ${frontendKey} or ${ingressKey}`))
+      }
+    }
+
+    if (hasDiscrepancy) {
+      this.log(chalk.yellow('\nWarning: Some frontend URLs do not match their corresponding ingress hosts.'))
+      this.log(chalk.yellow('This might indicate a misconfiguration in the frontend section of config.toml.'))
+    } else {
+      this.log(chalk.green('\nAll frontend URLs match their corresponding ingress hosts.'))
     }
   }
 }

@@ -1,7 +1,7 @@
-import { confirm, select } from '@inquirer/prompts'
+import { confirm, select, input } from '@inquirer/prompts'
 import { Command, Flags } from '@oclif/core'
 import chalk from 'chalk'
-import { ethers } from 'ethers'
+import { ethers, Contract } from 'ethers'
 import path from 'node:path'
 import { toString as qrCodeToString } from 'qrcode'
 
@@ -25,6 +25,11 @@ export default class HelperFundAccounts extends Command {
       char: 'c',
       default: './config.toml',
       description: 'Path to config.toml file',
+    }),
+    contracts: Flags.string({
+      char: 'n',
+      default: './config-contracts.toml',
+      description: 'Path to configs-contracts.toml file',
     }),
     dev: Flags.boolean({
       char: 'd',
@@ -62,6 +67,11 @@ export default class HelperFundAccounts extends Command {
       description: 'Amount to fund in ETH',
       default: '0.1',
     }),
+    layer: Flags.string({
+      char: 'l',
+      description: 'Specify layer to fund (1 for L1, 2 for L2)',
+      options: ["1", "2"],
+    }),
   }
 
   private blockExplorers: Record<Layer, { blockExplorerURI: string }> = {
@@ -76,11 +86,36 @@ export default class HelperFundAccounts extends Command {
   private l2Provider!: ethers.JsonRpcProvider
   private l2Rpc!: string
 
+  private altGasTokenEnabled: boolean = false
+  private l1GasTokenGateway!: string
+  private l1GasTokenAddress!: string
+
   public async run(): Promise<void> {
     const { flags } = await this.parse(HelperFundAccounts)
 
     const configPath = path.resolve(flags.config)
     const config = parseTomlConfig(configPath)
+
+    // Check for alternative gas token
+    this.altGasTokenEnabled = config?.['gas-token']?.ALTERNATIVE_GAS_TOKEN_ENABLED === true
+    if (this.altGasTokenEnabled) {
+      this.log(chalk.yellow('Alternative Gas Token mode is enabled.'))
+
+      // Parse config-contracts.toml
+      const contractsConfigPath = path.resolve(flags.contracts)
+      const contractsConfig = parseTomlConfig(contractsConfigPath)
+      this.l1GasTokenGateway = contractsConfig.L1_GAS_TOKEN_GATEWAY_PROXY_ADDR
+      this.l1GasTokenAddress = contractsConfig.L1_GAS_TOKEN_ADDR
+
+      if (!this.l1GasTokenAddress || !this.l1GasTokenGateway) {
+        this.error('Alternative Gas Token is enabled but L1_GAS_TOKEN_ADDR or L1_GAS_TOKEN_GATEWAY_PROXY_ADDR is not set in config-contracts.toml')
+      }
+
+      // Set default amount to 2 ETH if not explicitly set
+      if (flags.amount === '0.1' && !flags['amount']) {
+        flags.amount = '2'
+      }
+    }
 
     let l1RpcUrl: string
     let l2RpcUrl: string
@@ -133,8 +168,13 @@ export default class HelperFundAccounts extends Command {
         l2Addresses['ADDITIONAL_ACCOUNT'] = flags.account
       }
 
-      await this.fundL1Addresses(l1Addresses, flags)
-      await this.fundL2Addresses(l2Addresses, flags)
+      if (!flags.layer || flags.layer === "1") {
+        await this.fundL1Addresses(l1Addresses, flags)
+      }
+
+      if (!flags.layer || flags.layer === "2") {
+        await this.fundL2Addresses(l2Addresses, flags)
+      }
     }
 
     this.log(chalk.green('Funding complete'))
@@ -146,6 +186,79 @@ export default class HelperFundAccounts extends Command {
       await this.fundAddressAnvil(this.l1Provider, deployerAddress, 100, Layer.L1)
     } else {
       await this.promptManualFunding(deployerAddress, Number(flags.amount), Layer.L1)
+    }
+
+    if (this.altGasTokenEnabled) {
+      await this.fundDeployerWithAltGasToken(deployerAddress)
+    }
+  }
+
+  private async fundDeployerWithAltGasToken(deployerAddress: string): Promise<void> {
+    this.log(chalk.cyan('\nFunding Deployer with Alternative Gas Token:'))
+
+    const erc20ABI = [
+      'function balanceOf(address account) view returns (uint256)',
+      'function transfer(address to, uint256 amount) returns (bool)',
+      'function decimals() view returns (uint8)',
+      'function symbol() view returns (string)'
+    ]
+
+    const altGasToken = new Contract(this.l1GasTokenAddress, erc20ABI, this.l1Provider)
+
+    const symbol = await altGasToken.symbol()
+    const decimals = await altGasToken.decimals()
+
+    const amount = await select({
+      message: `How many ${symbol} tokens do you want to transfer?`,
+      choices: [
+        { name: '100', value: ethers.parseUnits('100', decimals) },
+        { name: '1000', value: ethers.parseUnits('1000', decimals) },
+        { name: '10000', value: ethers.parseUnits('10000', decimals) },
+        { name: 'Custom', value: -1n },
+      ],
+    })
+
+    let tokenAmount: bigint
+    if (amount === -1n) {
+      const customAmount = await input({ message: `Enter the amount of ${symbol} tokens:` })
+      tokenAmount = ethers.parseUnits(customAmount, decimals)
+    } else {
+      tokenAmount = amount
+    }
+
+    await this.promptManualFundingERC20(deployerAddress, tokenAmount, this.l1GasTokenAddress, symbol)
+  }
+
+  private async promptManualFundingERC20(address: string, amount: bigint, tokenAddress: string, symbol: string) {
+    const chainId = (await this.l1Provider.getNetwork()).chainId
+
+    const formattedAmount = ethers.formatUnits(amount, await new Contract(tokenAddress, ['function decimals() view returns (uint8)'], this.l1Provider).decimals())
+
+    const qrString = `ethereum:${tokenAddress}/transfer?address=${address}&uint256=${amount.toString()}&chainId=${chainId}`
+
+    await this.logAddress(address, `Please transfer ${chalk.yellow(formattedAmount)} ${symbol} to`, Layer.L1)
+    this.log('\n')
+    this.log(`ChainID: ${chalk.cyan(Number(chainId))}`)
+    this.log(`Chain RPC: ${chalk.cyan(this.l1Rpc)}`)
+    this.log(`Token Address: ${chalk.cyan(tokenAddress)}`)
+    this.log('\n')
+    this.log('Scan this QR code to initiate the transfer:')
+
+    this.log(await qrCodeToString(qrString, { small: true, type: 'terminal' }))
+
+    let funded = false
+    while (!funded) {
+      await confirm({ message: 'Press Enter when ready...' })
+      this.log(`Checking...`)
+      const balance = await new Contract(tokenAddress, ['function balanceOf(address) view returns (uint256)'], this.l1Provider).balanceOf(address)
+      const formattedBalance = ethers.formatUnits(balance, await new Contract(tokenAddress, ['function decimals() view returns (uint8)'], this.l1Provider).decimals())
+
+      if (balance >= amount) {
+        this.log(chalk.green(`Wallet Balance: ${formattedBalance} ${symbol}`))
+        funded = true
+      } else {
+        this.log(chalk.yellow(`Balance is only ${formattedBalance} ${symbol}. Please complete the transfer.`))
+      }
     }
   }
 
@@ -247,13 +360,10 @@ export default class HelperFundAccounts extends Command {
       this.log(chalk.blue(`Funding ${contractName}:`))
 
       if (flags.dev) {
-        // eslint-disable-next-line no-await-in-loop
         await this.fundAddressAnvil(this.l1Provider, address, Number(flags.amount), Layer.L1)
       } else if (flags.manual) {
-        // eslint-disable-next-line no-await-in-loop
         await this.promptManualFunding(address, Number(flags.amount), Layer.L1)
       } else {
-        // eslint-disable-next-line no-await-in-loop
         await this.fundAddressNetwork(this.l1Provider, address, Number(flags.amount), Layer.L1)
       }
     }
@@ -269,19 +379,64 @@ export default class HelperFundAccounts extends Command {
 
       this.log(chalk.blue(`Funding ${contractName}:`))
 
-      // eslint-disable-next-line no-await-in-loop
       const fundingMethod = await this.promptUserForL2Funding()
 
       if (fundingMethod === 'bridge') {
-        // eslint-disable-next-line no-await-in-loop
-        await this.bridgeFundsL1ToL2(address, Number(flags.amount))
+        if (this.altGasTokenEnabled) {
+          await this.bridgeAltTokenL1ToL2(address, Number(flags.amount))
+        } else {
+          await this.bridgeFundsL1ToL2(address, Number(flags.amount))
+        }
       } else if (fundingMethod === 'direct') {
-        // eslint-disable-next-line no-await-in-loop
         await this.fundAddressNetwork(this.l2Provider, address, Number(flags.amount), Layer.L2)
       } else {
-        // eslint-disable-next-line no-await-in-loop
         await this.promptManualFunding(address, Number(flags.amount), Layer.L2)
       }
+    }
+  }
+
+  private async bridgeAltTokenL1ToL2(recipient: string, amount: number): Promise<void> {
+    try {
+      this.log(chalk.cyan(`Bridging alternative gas token from L1 to L2 for recipient: ${recipient}`))
+
+      const tokenContract = new Contract(this.l1GasTokenAddress, [
+        'function approve(address spender, uint256 amount) returns (bool)',
+        'function balanceOf(address account) view returns (uint256)',
+        'function decimals() view returns (uint8)'
+      ], this.fundingWallet)
+
+      const decimals = await tokenContract.decimals()
+      const tokenAmount = ethers.parseUnits(amount.toString(), decimals)
+
+      // Approve the L1 Gas Token Gateway to spend tokens
+      const approveTx = await tokenContract.approve(this.l1GasTokenGateway, tokenAmount)
+      await approveTx.wait()
+
+      this.log(chalk.green(`Approved ${amount} tokens for L1 Gas Token Gateway`))
+
+      // Create L1 Gas Token Gateway contract instance
+      const l1GasTokenGateway = new Contract(
+        this.l1GasTokenGateway,
+        ['function depositETH(address _to, uint256 _amount, uint256 _gasLimit) payable'],
+        this.fundingWallet
+      )
+
+      const gasLimit = BigInt(300_000) // Adjust as needed
+      const depositTx = await l1GasTokenGateway.depositETH(
+        recipient,
+        tokenAmount,
+        gasLimit,
+        { value: ethers.parseEther('0.01') } // Small amount of ETH for L2 gas
+      )
+
+      await this.logTx(depositTx.hash, 'Bridge transaction sent', Layer.L1)
+
+      const receipt = await depositTx.wait()
+      this.log(chalk.green(`Transaction mined in block: ${receipt.blockNumber}`))
+
+      this.log(chalk.yellow(`Alternative gas tokens are being bridged to ${recipient}. Please wait for the transaction to be processed on L2.`))
+    } catch (error) {
+      this.error(`Error bridging alternative gas token from L1 to L2: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -301,7 +456,9 @@ export default class HelperFundAccounts extends Command {
 
     const qrString = `ethereum:${address}@${chainId}&value=${amount}`
 
-    await this.logAddress(address, `Please fund the following address with ${chalk.yellow(amount)} ETH`, layer)
+    const unitName = this.altGasTokenEnabled && layer === Layer.L2 ? 'GasTokens' : 'ETH'
+
+    await this.logAddress(address, `Please fund the following address with ${chalk.yellow(amount)} ${unitName}`, layer)
     this.log('\n')
     this.log(`ChainID: ${chalk.cyan(Number(chainId))}`)
     this.log(`Chain RPC: ${chalk.cyan(layer === Layer.L1 ? this.l1Rpc : this.l2Rpc)}`)
@@ -312,18 +469,16 @@ export default class HelperFundAccounts extends Command {
 
     let funded = false
     while (!funded) {
-      // eslint-disable-next-line no-await-in-loop
       await confirm({ message: 'Press Enter when ready...' })
       this.log(`Checking...`)
-      // eslint-disable-next-line no-await-in-loop
       const balance = await (layer === Layer.L1 ? this.l1Provider : this.l2Provider).getBalance(address)
       const formattedBalance = ethers.formatEther(balance)
 
       if (Number(formattedBalance) >= amount) {
-        this.log(chalk.green(`Wallet Balance: ${formattedBalance}`))
+        this.log(chalk.green(`Wallet Balance: ${formattedBalance} ${unitName}`))
         funded = true
       } else {
-        this.log(chalk.yellow(`Balance is only ${formattedBalance}. Please fund the wallet.`))
+        this.log(chalk.yellow(`Balance is only ${formattedBalance} ${unitName}. Please fund the wallet.`))
       }
     }
   }

@@ -23,7 +23,8 @@ export default class TestDependencies extends Command {
 
     if (flags.dev) {
       dependencies.push(
-        { command: 'minikube version', name: 'Minikube' }
+        { command: 'minikube version', name: 'Minikube' },
+        { command: 'k9s version', name: 'k9s' }
       )
     }
 
@@ -82,6 +83,7 @@ export default class TestDependencies extends Command {
       Helm: 'brew install helm || https://helm.sh/docs/intro/install/',
       Kubectl: 'brew install kubectl || https://kubernetes.io/docs/tasks/tools/',
       Minikube: 'brew install minikube || https://minikube.sigs.k8s.io/docs/start/',
+      k9s: 'brew install k9s || https://k9scli.io/topics/install/',
     }
     return instructions[name] || `Please refer to ${name}'s official documentation for installation instructions.`
   }

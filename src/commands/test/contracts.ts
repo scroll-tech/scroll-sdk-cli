@@ -1,12 +1,12 @@
-import {Command, Flags} from '@oclif/core'
+import { Command, Flags } from '@oclif/core'
 import chalk from 'chalk'
 import * as cliProgress from 'cli-progress'
-import {ethers} from 'ethers'
+import { ethers } from 'ethers'
 import path from 'node:path'
 
-import {DeployedContract, Layer, contracts} from '../../data/contracts.js'
-import {parseTomlConfig} from '../../utils/config-parser.js'
-import {addressLink} from '../../utils/onchain/index.js'
+import { DeployedContract, Layer, contracts } from '../../data/contracts.js'
+import { parseTomlConfig } from '../../utils/config-parser.js'
+import { addressLink } from '../../utils/onchain/index.js'
 
 interface ContractsConfig {
   [key: string]: string
@@ -33,22 +33,36 @@ export default class TestContracts extends Command {
     }),
   }
 
-  private blockExplorers: Record<Layer, {blockExplorerURI: string}> = {
-    [Layer.L1]: {blockExplorerURI: ''},
-    [Layer.L2]: {blockExplorerURI: ''},
+  private blockExplorers: Record<Layer, { blockExplorerURI: string }> = {
+    [Layer.L1]: { blockExplorerURI: '' },
+    [Layer.L2]: { blockExplorerURI: '' },
   }
 
   private contractsConfig: ContractsConfig = {}
+  private alternativeGasTokenEnabled: boolean = false
+
+  private skippedContracts: string[] = []
+  private missingContracts: string[] = []
+  private extraContracts: string[] = []
+  private unableToCheckOwnership: string[] = []
 
   // eslint-disable-next-line complexity
   async run(): Promise<void> {
-    const {flags} = await this.parse(TestContracts)
+    const { flags } = await this.parse(TestContracts)
 
     const configPath = path.resolve(flags.config)
     const contractsPath = path.resolve(flags.contracts)
 
     const config = parseTomlConfig(configPath)
     this.contractsConfig = parseTomlConfig(contractsPath)
+
+    // Read ALTERNATIVE_GAS_TOKEN_ENABLED from config
+    this.alternativeGasTokenEnabled = config?.['gas-token']?.ALTERNATIVE_GAS_TOKEN_ENABLED === true
+
+    // Print "Alternative Gas Token Mode" if enabled
+    if (this.alternativeGasTokenEnabled) {
+      this.log(chalk.cyan('\nAlternative Gas Token Mode\n'))
+    }
 
     let l1RpcUrl: string
     let l2RpcUrl: string
@@ -95,29 +109,8 @@ export default class TestContracts extends Command {
 
     // Check that config has a value for each required contract name
 
-    const l1Addresses: DeployedContract[] = contracts
-      .filter((contract) => contract.layer === Layer.L1)
-      .map((contract) => {
-        const address = this.contractsConfig[contract.name]
-        if (!address) {
-          this.log(chalk.yellow(`Missing address for contract: ${contract.name}`))
-        }
-
-        return {...contract, address}
-      })
-      .filter((contract: DeployedContract) => contract.address !== undefined)
-
-    const l2Addresses: DeployedContract[] = contracts
-      .filter((contract) => contract.layer === Layer.L2)
-      .map((contract) => {
-        const address = this.contractsConfig[contract.name]
-        if (!address) {
-          this.log(chalk.yellow(`Missing address for contract: ${contract.name}`))
-        }
-
-        return {...contract, address}
-      })
-      .filter((contract) => contract.address !== undefined)
+    const l1Addresses: DeployedContract[] = this.processContracts(contracts.filter((contract) => contract.layer === Layer.L1))
+    const l2Addresses: DeployedContract[] = this.processContracts(contracts.filter((contract) => contract.layer === Layer.L2))
 
     try {
       // Check Deployments
@@ -131,8 +124,8 @@ export default class TestContracts extends Command {
         cliProgress.Presets.shades_classic,
       )
 
-      const l1BarDeploy = multibarDeployment.create(l1Addresses.length, 0, {name: 'Checking L1 contract deployment...'})
-      const l2BarDeploy = multibarDeployment.create(l2Addresses.length, 0, {name: 'Checking L2 contract deployment...'})
+      const l1BarDeploy = multibarDeployment.create(l1Addresses.length, 0, { name: 'Checking L1 contract deployment...' })
+      const l2BarDeploy = multibarDeployment.create(l2Addresses.length, 0, { name: 'Checking L2 contract deployment...' })
 
       const notDeployed: DeployedContract[] = []
 
@@ -270,8 +263,87 @@ export default class TestContracts extends Command {
       if (notDeployed.length === 0 && notInitialized.length === 0 && notOwned.length === 0) {
         this.log(chalk.green('\nAll contracts are deployed, initialized and have owner set.'))
       }
+
+      // Report skipped, missing, and extra contracts
+      this.reportContractStatus()
     } catch (error) {
       this.error(chalk.red(`Failed to check contracts: ${error}`))
+    }
+  }
+
+  private processContracts(contractList: DeployedContract[]): DeployedContract[] {
+    return contractList
+      .map((contract) => {
+        const address = this.contractsConfig[contract.name]
+        if (this.shouldCheckContract(contract)) {
+          if (!address) {
+            this.missingContracts.push(contract.name)
+            return null // Return null for contracts without addresses
+          }
+          return { ...contract, address } as DeployedContract // Assert the type here
+        }
+        return null // Return null for contracts that shouldn't be checked
+      })
+      .filter((contract): contract is DeployedContract => contract !== null) // Filter out null values
+  }
+
+  private filterBypassedContracts(contract: DeployedContract): boolean {
+    if (!this.shouldCheckContract(contract)) {
+      if (this.alternativeGasTokenEnabled && contract.bypassedInAltGas) {
+        this.skippedContracts.push(contract.name)
+      }
+      return false
+    }
+    return true
+  }
+
+  private shouldCheckContract(contract: DeployedContract): boolean {
+    if (this.alternativeGasTokenEnabled) {
+      return !contract.bypassedInAltGas
+    } else {
+      return !contract.additionalAltGas
+    }
+  }
+
+  private reportContractStatus(): void {
+    if (this.alternativeGasTokenEnabled && this.skippedContracts.length > 0) {
+      this.log(chalk.yellow('\nSkipped contracts due to alternative gas token being enabled:'))
+      this.skippedContracts.forEach((name) => this.log(chalk.yellow(`- ${name}`)))
+    }
+
+    // Remove skipped contracts from missing contracts
+    this.missingContracts = this.missingContracts.filter(name => !this.skippedContracts.includes(name))
+
+    if (this.missingContracts.length > 0) {
+      this.log(chalk.yellow('\nMissing addresses for contracts:'))
+      this.missingContracts.forEach((name) => this.log(chalk.yellow(`- ${name}`)))
+    }
+
+    // Check for extra contracts in config file
+    const contractNames = new Set(contracts.map((c) => c.name))
+    for (const name in this.contractsConfig) {
+      if (!contractNames.has(name)) {
+        this.extraContracts.push(name)
+      }
+    }
+
+    if (this.extraContracts.length > 0) {
+      this.log(chalk.yellow('\nContracts in config file not present in contracts data:'))
+      this.extraContracts.forEach((name) => this.log(chalk.yellow(`- ${name}`)))
+    }
+
+    if (this.unableToCheckOwnership.length > 0) {
+      this.log(chalk.yellow('\nContracts where ownership could not be checked:'))
+      this.unableToCheckOwnership.forEach((name) => this.log(chalk.yellow(`- ${name}`)))
+    }
+
+    if (
+      this.skippedContracts.length === 0 &&
+      this.missingContracts.length === 0 &&
+      this.extraContracts.length === 0 &&
+      this.unableToCheckOwnership.length === 0
+    ) {
+      this.log(chalk.green('\nAll contracts are accounted for and no contracts were skipped or had issues.'))
     }
   }
 
@@ -282,7 +354,7 @@ export default class TestContracts extends Command {
     notDeployed: DeployedContract[],
   ) {
     for (const c of contracts) {
-      progressBar.update({name: `Checking ${c.name}...`})
+      progressBar.update({ name: `Checking ${c.name}...` })
       // eslint-disable-next-line no-await-in-loop
       const code = await provider.getCode(c.address ?? '')
       if (code === '0x') {
@@ -300,7 +372,7 @@ export default class TestContracts extends Command {
     notInitialized: DeployedContract[],
   ) {
     for (const c of contracts) {
-      progressBar.update({name: `Checking ${c.name}...`})
+      progressBar.update({ name: `Checking ${c.name}...` })
       try {
         if (!c.address) {
           throw new Error(`No address found for ${c.name}`)
@@ -335,7 +407,7 @@ export default class TestContracts extends Command {
     const ownableABI = ['function owner() view returns (address)']
 
     for (const c of contracts) {
-      progressBar.update({name: `Checking ${c.name}...`})
+      progressBar.update({ name: `Checking ${c.name}...` })
       if (c.owned && c.address) {
         const contract = new ethers.Contract(c.address, ownableABI, provider)
         try {
@@ -352,7 +424,8 @@ export default class TestContracts extends Command {
             notOwned.push(c)
           }
         } catch (error) {
-          this.error(`Error checking owner for ${c.name}: ${error}`)
+          this.log(chalk.yellow(`Unable to check ownership for ${c.name}: ${error}`))
+          this.unableToCheckOwnership.push(c.name)
         }
       }
 

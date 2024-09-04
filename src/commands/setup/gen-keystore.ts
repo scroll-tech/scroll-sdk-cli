@@ -1,11 +1,12 @@
 import { Command, Flags } from '@oclif/core'
-import { Wallet } from 'ethers'
+import { Wallet, ethers } from 'ethers'
 import * as fs from 'fs'
 import * as path from 'path'
 import { confirm, password as input, input as textInput } from '@inquirer/prompts'
 import * as toml from '@iarna/toml'
 import chalk from 'chalk'
 import { isAddress } from 'ethers'
+import crypto from 'crypto'
 
 interface KeyPair {
   privateKey: string
@@ -49,11 +50,16 @@ export default class SetupGenKeystore extends Command {
     }
   }
 
+  private generateRandomHex(bytes: number): string {
+    return crypto.randomBytes(bytes).toString('hex')
+  }
+
   private async updateConfigToml(
     signerAddress: string,
     keystoreJson: string,
     password: string,
-    accounts: Record<string, KeyPair>
+    accounts: Record<string, KeyPair>,
+    coordinatorJwtSecretKey?: string
   ): Promise<void> {
     const configPath = path.join(process.cwd(), 'config.toml')
     let config: any = {}
@@ -87,6 +93,14 @@ export default class SetupGenKeystore extends Command {
         config.accounts[`${key}_PRIVATE_KEY`] = value.privateKey
         config.accounts[`${key}_ADDR`] = value.address
       }
+    }
+
+    // Add COORDINATOR_JWT_SECRET_KEY if generated
+    if (coordinatorJwtSecretKey) {
+      if (!config.coordinator) {
+        config.coordinator = {}
+      }
+      config.coordinator.COORDINATOR_JWT_SECRET_KEY = coordinatorJwtSecretKey
     }
 
     fs.writeFileSync(configPath, toml.stringify(config))
@@ -151,10 +165,18 @@ export default class SetupGenKeystore extends Command {
     this.log(chalk.green(`\nL2GETH_SIGNER_ADDRESS: ${address}`))
     this.log(chalk.green('L2GETH_KEYSTORE: [Encrypted JSON keystore]'))
 
+    let coordinatorJwtSecretKey: string | undefined
+
+    const generateJwtSecret = await confirm({ message: 'Do you want to generate a random COORDINATOR_JWT_SECRET_KEY?' })
+    if (generateJwtSecret) {
+      coordinatorJwtSecretKey = this.generateRandomHex(32)
+      this.log(chalk.green(`Generated COORDINATOR_JWT_SECRET_KEY: ${coordinatorJwtSecretKey}`))
+    }
+
     const updateConfig = await confirm({ message: 'Do you want to update these values in config.toml?' })
 
     if (updateConfig) {
-      await this.updateConfigToml(address, keystoreJson, password, accounts)
+      await this.updateConfigToml(address, keystoreJson, password, accounts, coordinatorJwtSecretKey)
       this.log(chalk.green('config.toml updated successfully'))
     }
 
