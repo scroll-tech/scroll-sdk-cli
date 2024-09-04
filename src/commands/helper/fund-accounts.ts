@@ -335,6 +335,11 @@ export default class HelperFundAccounts extends Command {
 
       const unitName = this.altGasTokenEnabled && layer === Layer.L2 ? this.altGasTokenSymbol : 'ETH';
 
+      this.log(chalk.cyan(`Initial balances:`));
+      this.log(chalk.yellow(`  Funder:    ${ethers.formatEther(initialFunderBalance)} ${unitName}`));
+      this.log(chalk.yellow(`  Recipient: ${ethers.formatEther(initialRecipientBalance)} ${unitName}`));
+      this.log(chalk.yellow(`Funding ${address} with ${amount} ${unitName}...`));
+
       const tx = await fundingWallet.sendTransaction({
         to: address,
         value: ethers.parseEther(amount.toString()),
