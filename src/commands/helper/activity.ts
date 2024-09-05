@@ -2,6 +2,8 @@ import { Command, Flags } from '@oclif/core'
 import chalk from 'chalk'
 import { ethers } from 'ethers'
 import path from 'node:path'
+import { confirm } from '@inquirer/prompts';
+import cliProgress from 'cli-progress';
 
 import { parseTomlConfig } from '../../utils/config-parser.js'
 import { txLink } from '../../utils/onchain/txLink.js'
@@ -108,32 +110,102 @@ export default class HelperActivity extends Command {
       wallets[layer] = new ethers.Wallet(privateKey, this.providers[layer])
 
       this.log(rpcUrl)
-    }
 
-    this.log(
-      chalk.cyan(
-        `Starting activity generation on ${layers.map((l) => l.toUpperCase()).join(' and ')}. Press Ctrl+C to stop.`,
-      ),
-    )
-    this.log(
-      chalk.magenta(
-        `Sender: ${publicKey} | Recipient: ${recipientAddr}`,
-      ),
-    )
+      const currentNonce = await this.providers[layer].getTransactionCount(publicKey, 'latest');
+      const pendingNonce = await this.providers[layer].getTransactionCount(publicKey, 'pending');
+      const pendingTxCount = pendingNonce - currentNonce;
 
-    // eslint-disable-next-line no-constant-condition
-    layers.map(async (layer) => {
-      while (true) {
-        for (const layer of layers) {
-          // eslint-disable-next-line no-await-in-loop
-          await this.sendTransaction(wallets[layer], recipientAddr, layer)
+      if (pendingTxCount > 0) {
+        this.log(chalk.red(`${pendingTxCount} pending transactions detected for ${publicKey} on ${layer.toUpperCase()}.`));
+
+        const replacePending = await confirm({
+          message: `Do you want to replace the ${pendingTxCount} pending transactions with higher gas prices?`,
+        });
+
+        if (replacePending) {
+          this.log('Replacing pending txs...');
+          await this.replaceTransactions(wallets[layer], currentNonce, pendingNonce, layer);
+          return;
+        } else {
+          this.log("Wait for pending tx to clear.")
+          return;
         }
-
-        // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
-        await new Promise((resolve) => setTimeout(resolve, flags.interval * 1000))
       }
 
-    })
+      this.log(
+        chalk.cyan(
+          `Starting activity generation on ${layers.map((l) => l.toUpperCase()).join(' and ')}. Press Ctrl+C to stop.`,
+        ),
+      )
+      this.log(
+        chalk.magenta(
+          `Sender: ${publicKey} | Recipient: ${recipientAddr}`,
+        ),
+      )
+
+      // eslint-disable-next-line no-constant-condition
+      layers.map(async (layer) => {
+        while (true) {
+          for (const layer of layers) {
+            // eslint-disable-next-line no-await-in-loop
+            await this.sendTransaction(wallets[layer], recipientAddr, layer)
+          }
+
+          // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
+          await new Promise((resolve) => setTimeout(resolve, flags.interval * 1000))
+        }
+
+      })
+    }
+
+  }
+
+  private async replaceTransactions(wallet: ethers.Wallet, startNonce: number, endNonce: number, layer: Layer) {
+    const batchSize = 100;
+    const currentGasPrice = await this.providers[layer].getFeeData();
+
+    const progressBar = new cliProgress.SingleBar({
+      format: 'Replacing transactions |' + chalk.cyan('{bar}') + '| {percentage}% || {value}/{total} Transactions',
+      barCompleteChar: '\u2588',
+      barIncompleteChar: '\u2591',
+      hideCursor: true
+    });
+
+    progressBar.start(endNonce - startNonce, 0);
+
+    for (let i = startNonce; i < endNonce; i += batchSize) {
+      const promises = [];
+      for (let j = i; j < Math.min(i + batchSize, endNonce); j++) {
+        const newTx = {
+          to: wallet.address, // sending to self
+          value: 0, // 0 ETH
+          nonce: j,
+          maxFeePerGas: currentGasPrice.maxFeePerGas ? currentGasPrice.maxFeePerGas * 3n : undefined,
+          maxPriorityFeePerGas: currentGasPrice.maxPriorityFeePerGas ? currentGasPrice.maxPriorityFeePerGas * 3n : undefined,
+          gasLimit: 21000, // standard gas limit for simple transfers
+        };
+
+        promises.push(this.sendReplacementTransaction(wallet, newTx, layer));
+      }
+
+      const results = await Promise.allSettled(promises);
+      const successCount = results.filter(r => r.status === 'fulfilled').length;
+      progressBar.increment(successCount);
+    }
+
+    progressBar.stop();
+    this.log(chalk.green(`Replacement of transactions completed.`));
+  }
+
+  private async sendReplacementTransaction(wallet: ethers.Wallet, tx: ethers.TransactionRequest, layer: Layer): Promise<boolean> {
+    try {
+      const sentTx = await wallet.sendTransaction(tx);
+      await sentTx.wait();
+      return true;
+    } catch (error) {
+      // Silently fail, we'll handle the overall progress in the replaceTransactions method
+      return false;
+    }
   }
 
   private async sendTransaction(wallet: ethers.Wallet, recipient: string, layer: Layer) {
@@ -156,6 +228,7 @@ export default class HelperActivity extends Command {
         }
       } catch (timeoutError) {
         this.log(chalk.yellow(`${layer.toUpperCase()} Transaction sent, but taking longer than expected: ${tx.hash}`))
+        this.log(`${JSON.stringify(tx)}`)
       }
     } catch (error) {
       this.log(
