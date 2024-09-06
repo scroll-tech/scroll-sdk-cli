@@ -104,6 +104,10 @@ export default class TestIngress extends Command {
           },
           method: 'POST',
         })
+      } else if (name === 'coordinator-api') {
+        response = await fetch(`http://${host}/coordinator/v1/challenge/`, {
+          method: 'GET',
+        })
       } else {
         response = await fetch(`http://${host}`)
       }

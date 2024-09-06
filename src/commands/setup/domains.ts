@@ -17,49 +17,46 @@ export default class SetupDomains extends Command {
   ]
 
   static override flags = {
-    // flag with no value (-f, --force)
     force: Flags.boolean({ char: 'f' }),
-    // flag with a value (-n, --name=VALUE)
     name: Flags.string({ char: 'n', description: 'name to print' }),
+  }
+
+  private async getExistingConfig(): Promise<any> {
+    const configPath = path.join(process.cwd(), 'config.toml')
+    if (!fs.existsSync(configPath)) {
+      this.error('config.toml not found in the current directory.')
+      return {}
+    }
+
+    const configContent = fs.readFileSync(configPath, 'utf-8')
+    return toml.parse(configContent) as any
   }
 
   private async updateConfigFile(domainConfig: Record<string, string>, ingressConfig: Record<string, string>, generalConfig: Record<string, string>): Promise<void> {
     const configPath = path.join(process.cwd(), 'config.toml')
-    if (!fs.existsSync(configPath)) {
-      this.error('config.toml not found in the current directory.')
-      return
-    }
-
-    const configContent = fs.readFileSync(configPath, 'utf-8')
-    const config = toml.parse(configContent) as toml.JsonMap
+    const existingConfig = await this.getExistingConfig()
 
     // Ensure sections exist
-    if (!config.frontend) config.frontend = {}
-    if (!config.ingress) config.ingress = {}
-    if (!config.general) config.general = {}
+    if (!existingConfig.frontend) existingConfig.frontend = {}
+    if (!existingConfig.ingress) existingConfig.ingress = {}
+    if (!existingConfig.general) existingConfig.general = {}
 
     // Update only the specified keys
     Object.entries(generalConfig).forEach(([key, value]) => {
-      if (config.general && typeof config.general === 'object') {
-        (config.general as Record<string, unknown>)[key] = value
-      }
+      existingConfig.general[key] = value
     })
     Object.entries(domainConfig).forEach(([key, value]) => {
-      if (config.frontend && typeof config.frontend === 'object') {
-        (config.frontend as Record<string, unknown>)[key] = value
-      }
+      existingConfig.frontend[key] = value
     })
     Object.entries(ingressConfig).forEach(([key, value]) => {
-      if (config.ingress && typeof config.ingress === 'object') {
-        (config.ingress as Record<string, unknown>)[key] = value
-      }
+      existingConfig.ingress[key] = value
     })
 
     // Convert the updated config back to TOML string
-    const updatedContent = toml.stringify(config)
+    const updatedContent = toml.stringify(existingConfig)
 
     // Merge the updated content with the original content to preserve comments
-    const mergedContent = this.mergeTomlContent(configContent, updatedContent)
+    const mergedContent = this.mergeTomlContent(fs.readFileSync(configPath, 'utf-8'), updatedContent)
 
     fs.writeFileSync(configPath, mergedContent)
     this.logSuccess('config.toml has been updated with the new domain configurations.')
@@ -129,28 +126,24 @@ export default class SetupDomains extends Command {
   }
 
   public async run(): Promise<void> {
-    const configPath = path.join(process.cwd(), 'config.toml')
-    if (!fs.existsSync(configPath)) {
-      this.error('config.toml not found in the current directory.')
-      return
-    }
-
-    const configContent = fs.readFileSync(configPath, 'utf-8')
-    const config = toml.parse(configContent)
+    const existingConfig = await this.getExistingConfig()
 
     this.logSection('Current domain configurations:')
-    for (const [key, value] of Object.entries(config.frontend || {})) {
+    for (const [key, value] of Object.entries(existingConfig.frontend || {})) {
       if (key.includes('URI')) {
         this.logKeyValue(key, value as string)
       }
     }
 
     this.logSection('Current ingress configurations:')
-    for (const [key, value] of Object.entries(config.ingress || {})) {
+    for (const [key, value] of Object.entries(existingConfig.ingress || {})) {
       this.logKeyValue(key, value as string)
     }
 
-    const usesPublicL1 = await confirm({ message: 'Are you using a public L1 network?' })
+    const usesPublicL1 = await confirm({
+      message: 'Are you using a public L1 network?',
+      default: existingConfig.general?.CHAIN_NAME_L1 !== 'Devnet'
+    })
 
     let domainConfig: Record<string, string> = {}
     let ingressConfig: Record<string, string> = {}
@@ -169,6 +162,7 @@ export default class SetupDomains extends Command {
           { name: 'Ethereum Sepolia Testnet', value: 'sepolia' },
           { name: 'Ethereum Holesky Testnet', value: 'holesky' },
         ],
+        default: existingConfig.general?.CHAIN_NAME_L1?.toLowerCase() || 'mainnet'
       }) as L1Network;
 
       const l1ExplorerUrls: Record<L1Network, string> = {
@@ -201,37 +195,38 @@ export default class SetupDomains extends Command {
       this.logKeyValue('L1 Chain Name', generalConfig.CHAIN_NAME_L1)
       this.logKeyValue('L1 Chain ID', generalConfig.CHAIN_ID_L1)
 
-      const setL1RpcEndpoint = await confirm({ message: 'Do you want to set custom L1 RPC endpoints for the SDK backend?' })
+      const setL1RpcEndpoint = await confirm({
+        message: 'Do you want to set custom L1 RPC endpoints for the SDK backend?',
+      })
 
       if (setL1RpcEndpoint) {
-        const generalConfig = config.general as Record<string, unknown>;
-
-        const l1RpcEndpoint = await input({
+        generalConfig.L1_RPC_ENDPOINT = await input({
           message: 'Enter the L1 RPC HTTP endpoint for SDK backend:',
-          default: typeof generalConfig.L1_RPC_ENDPOINT === 'string'
-            ? generalConfig.L1_RPC_ENDPOINT
-            : 'http://l1-devnet:8545',
+          default: existingConfig.general?.L1_RPC_ENDPOINT || 'http://l1-devnet:8545',
         });
-        generalConfig.L1_RPC_ENDPOINT = l1RpcEndpoint;
 
-        const l1RpcEndpointWebsocket = await input({
+        generalConfig.L1_RPC_ENDPOINT_WEBSOCKET = await input({
           message: 'Enter the L1 RPC WebSocket endpoint for SDK backend:',
-          default: typeof generalConfig.L1_RPC_ENDPOINT_WEBSOCKET === 'string'
-            ? generalConfig.L1_RPC_ENDPOINT_WEBSOCKET
-            : 'ws://l1-devnet:8546',
+          default: existingConfig.general?.L1_RPC_ENDPOINT_WEBSOCKET || 'ws://l1-devnet:8546',
         });
-        generalConfig.L1_RPC_ENDPOINT_WEBSOCKET = l1RpcEndpointWebsocket;
 
         this.logSuccess(`Updated [general] L1_RPC_ENDPOINT = "${generalConfig.L1_RPC_ENDPOINT}"`)
         this.logSuccess(`Updated [general] L1_RPC_ENDPOINT_WEBSOCKET = "${generalConfig.L1_RPC_ENDPOINT_WEBSOCKET}"`)
       }
 
-      const sharedEnding = await confirm({ message: 'Do you want all L2 external URLs to share a URL ending?' })
+      sharedEnding = await confirm({
+        message: 'Do you want all L2 external URLs to share a URL ending?',
+      })
 
       if (sharedEnding) {
+        const existingFrontendHost = existingConfig.ingress?.FRONTEND_HOST || ''
+        const defaultUrlEnding = existingFrontendHost.startsWith('frontend.') || existingFrontendHost.startsWith('frontends.')
+          ? existingFrontendHost.split('.').slice(1).join('.')
+          : existingFrontendHost || 'scrollsdk'
+
         urlEnding = await input({
           message: 'Enter the shared URL ending:',
-          default: 'scrollsdk',
+          default: defaultUrlEnding,
         })
 
         protocol = await select({
@@ -240,6 +235,7 @@ export default class SetupDomains extends Command {
             { name: 'HTTP', value: 'http' },
             { name: 'HTTPS', value: 'https' },
           ],
+          default: existingConfig.frontend?.EXTERNAL_RPC_URI_L2?.startsWith('https') ? 'https' : 'http'
         })
 
         const frontendAtRoot = await confirm({
@@ -267,29 +263,37 @@ export default class SetupDomains extends Command {
           ...domainConfig,
           EXTERNAL_RPC_URI_L2: await input({
             message: 'Enter EXTERNAL_RPC_URI_L2:',
-            default: 'http://l2-rpc.scrollsdk',
+            default: existingConfig.frontend?.EXTERNAL_RPC_URI_L2 || 'http://l2-rpc.scrollsdk',
           }),
           BRIDGE_API_URI: await input({
             message: 'Enter BRIDGE_API_URI:',
-            default: 'http://bridge-history-api.scrollsdk/api',
+            default: existingConfig.frontend?.BRIDGE_API_URI || 'http://bridge-history-api.scrollsdk/api',
           }),
           ROLLUPSCAN_API_URI: await input({
             message: 'Enter ROLLUPSCAN_API_URI:',
-            default: 'http://rollup-explorer-backend.scrollsdk/api',
+            default: existingConfig.frontend?.ROLLUPSCAN_API_URI || 'http://rollup-explorer-backend.scrollsdk/api',
           }),
           EXTERNAL_EXPLORER_URI_L2: await input({
             message: 'Enter EXTERNAL_EXPLORER_URI_L2:',
-            default: 'http://l2-explorer.scrollsdk',
+            default: existingConfig.frontend?.EXTERNAL_EXPLORER_URI_L2 || 'http://blockscout.scrollsdk',
           }),
         }
       }
     } else {
-      sharedEnding = await confirm({ message: 'Do you want all external URLs to share a URL ending?' })
+      sharedEnding = await confirm({
+        message: 'Do you want all external URLs to share a URL ending?',
+        default: !!existingConfig.ingress?.FRONTEND_HOST
+      })
 
       if (sharedEnding) {
+        const existingFrontendHost = existingConfig.ingress?.FRONTEND_HOST || ''
+        const defaultUrlEnding = existingFrontendHost.startsWith('frontend.') || existingFrontendHost.startsWith('frontends.')
+          ? existingFrontendHost.split('.').slice(1).join('.')
+          : existingFrontendHost || 'scrollsdk'
+
         urlEnding = await input({
           message: 'Enter the shared URL ending:',
-          default: 'scrollsdk',
+          default: defaultUrlEnding,
         })
 
         protocol = await select({
@@ -298,6 +302,7 @@ export default class SetupDomains extends Command {
             { name: 'HTTP', value: 'http' },
             { name: 'HTTPS', value: 'https' },
           ],
+          default: existingConfig.frontend?.EXTERNAL_RPC_URI_L1?.startsWith('https') ? 'https' : 'http'
         })
 
         domainConfig = {
@@ -306,7 +311,7 @@ export default class SetupDomains extends Command {
           BRIDGE_API_URI: `${protocol}://bridge-history-api.${urlEnding}/api`,
           ROLLUPSCAN_API_URI: `${protocol}://rollup-explorer-backend.${urlEnding}/api`,
           EXTERNAL_EXPLORER_URI_L1: `${protocol}://l1-explorer.${urlEnding}`,
-          EXTERNAL_EXPLORER_URI_L2: `${protocol}://l2-explorer.${urlEnding}`,
+          EXTERNAL_EXPLORER_URI_L2: `${protocol}://blockscout.${urlEnding}`,
         }
 
         ingressConfig = {
@@ -318,68 +323,66 @@ export default class SetupDomains extends Command {
           BLOCKSCOUT_HOST: `${urlEnding}`,
         }
       } else {
-        // Prompt for protocol first
         protocol = await select({
           message: 'Choose the protocol for the URLs:',
           choices: [
             { name: 'HTTP', value: 'http' },
             { name: 'HTTPS', value: 'https' },
           ],
+          default: existingConfig.frontend?.EXTERNAL_RPC_URI_L1?.startsWith('https') ? 'https' : 'http'
         })
 
-        // Prompt for ingress values first
         ingressConfig = {
           FRONTEND_HOST: await input({
             message: 'Enter FRONTEND_HOST:',
-            default: 'frontends.scrollsdk',
+            default: existingConfig.ingress?.FRONTEND_HOST || 'frontends.scrollsdk',
           }),
           BRIDGE_HISTORY_API_HOST: await input({
             message: 'Enter BRIDGE_HISTORY_API_HOST:',
-            default: 'bridge-history-api.scrollsdk',
+            default: existingConfig.ingress?.BRIDGE_HISTORY_API_HOST || 'bridge-history-api.scrollsdk',
           }),
           ROLLUP_EXPLORER_API_HOST: await input({
             message: 'Enter ROLLUP_EXPLORER_API_HOST:',
-            default: 'rollup-explorer-backend.scrollsdk',
+            default: existingConfig.ingress?.ROLLUP_EXPLORER_API_HOST || 'rollup-explorer-backend.scrollsdk',
           }),
           COORDINATOR_API_HOST: await input({
             message: 'Enter COORDINATOR_API_HOST:',
-            default: 'coordinator-api.scrollsdk',
+            default: existingConfig.ingress?.COORDINATOR_API_HOST || 'coordinator-api.scrollsdk',
           }),
           RPC_GATEWAY_HOST: await input({
             message: 'Enter RPC_GATEWAY_HOST:',
-            default: 'l2-rpc.scrollsdk',
+            default: existingConfig.ingress?.RPC_GATEWAY_HOST || 'l2-rpc.scrollsdk',
           }),
           BLOCKSCOUT_HOST: await input({
             message: 'Enter BLOCKSCOUT_HOST:',
-            default: 'blockscout.scrollsdk',
+            default: existingConfig.ingress?.BLOCKSCOUT_HOST || 'blockscout.scrollsdk',
           }),
         }
 
-        // Now prompt for domain config values, using ingress values as defaults and prepending the selected protocol
         domainConfig = {
           EXTERNAL_RPC_URI_L1: await input({
             message: 'Enter EXTERNAL_RPC_URI_L1:',
-            default: `${protocol}://${ingressConfig.RPC_GATEWAY_HOST}`,
+            default: existingConfig.frontend?.EXTERNAL_RPC_URI_L1 || `${protocol}://${ingressConfig.RPC_GATEWAY_HOST}`,
           }),
           EXTERNAL_RPC_URI_L2: await input({
             message: 'Enter EXTERNAL_RPC_URI_L2:',
-            default: `${protocol}://${ingressConfig.RPC_GATEWAY_HOST}`,
+            default: existingConfig.frontend?.EXTERNAL_RPC_URI_L2 || `${protocol}://${ingressConfig.RPC_GATEWAY_HOST}`,
           }),
           BRIDGE_API_URI: await input({
             message: 'Enter BRIDGE_API_URI:',
-            default: `${protocol}://${ingressConfig.BRIDGE_HISTORY_API_HOST}/api`,
+            default: existingConfig.frontend?.BRIDGE_API_URI || `${protocol}://${ingressConfig.BRIDGE_HISTORY_API_HOST}/api`,
           }),
           ROLLUPSCAN_API_URI: await input({
             message: 'Enter ROLLUPSCAN_API_URI:',
-            default: `${protocol}://${ingressConfig.ROLLUP_EXPLORER_API_HOST}/api`,
+            default: existingConfig.frontend?.ROLLUPSCAN_API_URI || `${protocol}://${ingressConfig.ROLLUP_EXPLORER_API_HOST}/api`,
           }),
           EXTERNAL_EXPLORER_URI_L1: await input({
             message: 'Enter EXTERNAL_EXPLORER_URI_L1:',
-            default: `${protocol}://${ingressConfig.BLOCKSCOUT_HOST}`,
+            default: existingConfig.frontend?.EXTERNAL_EXPLORER_URI_L1 || `${protocol}://${ingressConfig.BLOCKSCOUT_HOST}`,
           }),
           EXTERNAL_EXPLORER_URI_L2: await input({
             message: 'Enter EXTERNAL_EXPLORER_URI_L2:',
-            default: `${protocol}://${ingressConfig.BLOCKSCOUT_HOST}`,
+            default: existingConfig.frontend?.EXTERNAL_EXPLORER_URI_L2 || `${protocol}://${ingressConfig.BLOCKSCOUT_HOST}`,
           }),
         }
       }

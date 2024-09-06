@@ -45,7 +45,7 @@ enum Layer {
   L2 = 'l2',
 }
 
-const FUNDING_AMOUNT = 0.008
+const FUNDING_AMOUNT = 0.02
 
 // Custom error types
 class WalletFundingError extends Error {
@@ -745,8 +745,9 @@ export default class TestE2e extends Command {
           // eslint-disable-next-line no-await-in-loop
           withdrawals = await getWithdrawals(this.wallet.address, this.bridgeApiUrl)
         } catch (error) {
+          const url = `${this.bridgeApiUrl}/withdrawals?address=${this.wallet.address}`
           this.logResult(
-            `Warning: Failed to get withdrawals. Continuing... Error: ${error instanceof Error ? error.message : 'Unknown error'
+            `Warning: Failed to get withdrawals from ${url}. Continuing... Error: ${error instanceof Error ? error.message : 'Unknown error'
             }`,
             'warning',
           )
@@ -824,8 +825,37 @@ export default class TestE2e extends Command {
 
   private async fundWalletOnL1(): Promise<void> {
     try {
+      const ethBalance = await this.l1Provider.getBalance(this.wallet.address)
+      const formattedEthBalance = ethers.formatEther(ethBalance)
+      this.logResult(`Current wallet ETH balance: ${formattedEthBalance} ETH`, 'info')
+
+      if (this.altGasTokenEnabled) {
+        const tokenContract = new ethers.Contract(this.l1GasTokenAddress, [
+          'function balanceOf(address account) view returns (uint256)',
+          'function symbol() view returns (string)',
+          'function decimals() view returns (uint8)'
+        ], this.l1Provider)
+
+        const tokenBalance = await tokenContract.balanceOf(this.wallet.address)
+        const tokenSymbol = await tokenContract.symbol()
+        const tokenDecimals = await tokenContract.decimals()
+        const formattedTokenBalance = ethers.formatUnits(tokenBalance, tokenDecimals)
+        this.logResult(`Current wallet ${tokenSymbol} balance: ${formattedTokenBalance} ${tokenSymbol}`, 'info')
+      }
+
+      const shouldFund = await confirm({
+        message: `Do you want to fund this wallet with ${FUNDING_AMOUNT} ETH?`,
+        default: false
+      })
+
+      if (!shouldFund) {
+        this.logResult('Skipping wallet funding...', 'info')
+        this.results.fundWalletOnL1.complete = true
+        return
+      }
+
       if (this.fundingWallet && !this.manualFunding) {
-        this.logResult('Sending funds to new wallet...')
+        this.logResult('Sending funds to wallet...')
         await this.fundWalletWithEth(FUNDING_AMOUNT, Layer.L1)
 
         if (this.altGasTokenEnabled) {
@@ -982,14 +1012,15 @@ export default class TestE2e extends Command {
   // Generate a new random wallet to run all tests.
   private async generateNewWallet(privateKey: string = ''): Promise<void> {
     if (privateKey) {
-      this.logResult('Loaded existing private key...')
+      this.logResult('Detected existing wallet...')
     } else {
       const randomWallet = ethers.Wallet.createRandom()
       privateKey = randomWallet.privateKey
+      this.logResult('Generated new wallet...')
     }
 
     this.wallet = new ethers.Wallet(privateKey, this.l1Provider)
-    await this.logAddress(this.wallet.address, 'Generated new wallet', Layer.L1)
+    await this.logAddress(this.wallet.address, 'Wallet address', Layer.L1)
     this.results.fundWalletOnL1 = { complete: false, generatedPrivateKey: privateKey, walletAddress: this.wallet.address }
     this.logResult(`Private Key: ${chalk.yellow(this.wallet.privateKey)}`, 'warning')
   }
@@ -1224,7 +1255,7 @@ export default class TestE2e extends Command {
       }
 
       this.logSection('Initiate ERC20 Deposit on L1')
-      if (this.results.bridgeERC20L1ToL2.complete) {
+      if (this.results.bridgeERC20L1ToL2.l1DepositTx) {
         this.logResult('Skipping section...', 'info')
       } else {
         if (this.altGasTokenEnabled) {
@@ -1280,9 +1311,7 @@ export default class TestE2e extends Command {
       }
 
       this.logSection('Waiting for L1 ERC20 Deposit')
-      if (this.altGasTokenEnabled) {
-        this.logResult('Skipping in alternative gas token mode', 'info')
-      } else if (this.results.bridgeERC20L1ToL2.complete) {
+      if (this.results.bridgeERC20L1ToL2.complete) {
         this.logResult('Skipping section...', 'info')
       } else {
         await this.completeL1ERC20Deposit()

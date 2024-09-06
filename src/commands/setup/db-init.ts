@@ -211,28 +211,31 @@ export default class SetupDbInit extends Command {
     }
   }
 
-  public async run(): Promise<void> {
-    const { flags } = await this.parse(SetupDbInit)
-
+  private async getExistingConfig(): Promise<any> {
     const configPath = path.join(process.cwd(), 'config.toml')
     if (!fs.existsSync(configPath)) {
-      this.error(chalk.red('config.toml not found in the current directory.'))
-      return
+      this.error('config.toml not found in the current directory.')
+      return {}
     }
 
     const configContent = fs.readFileSync(configPath, 'utf-8')
-    const config = toml.parse(configContent)
+    return toml.parse(configContent) as any
+  }
+
+  public async run(): Promise<void> {
+    const { flags } = await this.parse(SetupDbInit)
+    const existingConfig = await this.getExistingConfig()
 
     if (flags['update-port']) {
       this.log(chalk.blue('Updating database port...'))
-      this.updateDatabasePort(config, flags['update-port'])
+      this.updateDatabasePort(existingConfig, flags['update-port'])
 
       const confirmUpdate = await confirm({
         message: 'Do you want to update the config.toml file with these changes?'
       })
 
       if (confirmUpdate) {
-        fs.writeFileSync(configPath, toml.stringify(config as any))
+        fs.writeFileSync(path.join(process.cwd(), 'config.toml'), toml.stringify(existingConfig as any))
         this.log(chalk.green('config.toml has been updated with the new database port.'))
       } else {
         this.log(chalk.yellow('Configuration update cancelled.'))
@@ -257,14 +260,16 @@ export default class SetupDbInit extends Command {
     ]
 
     const createBlockscout = await confirm({
-      message: chalk.cyan('Do you want to create a database for Blockscout?')
+      message: chalk.cyan('Do you want to create a database for Blockscout?'),
+      default: !!existingConfig.db?.BLOCKSCOUT_DB_CONNECTION_STRING
     })
     if (createBlockscout) {
       databases.push({ name: 'scroll_blockscout', user: 'BLOCKSCOUT' })
     }
 
     const createL1Explorer = await confirm({
-      message: chalk.cyan('Do you want to create a database for L1 Explorer?')
+      message: chalk.cyan('Do you want to create a database for L1 Explorer?'),
+      default: !!existingConfig.db?.L1_EXPLORER_DB_CONNECTION_STRING
     })
     if (createL1Explorer) {
       databases.push({ name: 'scroll_l1explorer', user: 'L1_EXPLORER' })
@@ -275,7 +280,7 @@ export default class SetupDbInit extends Command {
     try {
       // If updating permissions, we only need to connect once
       if (flags['update-permissions']) {
-        [this.publicHost, this.publicPort, this.pgUser, this.pgPassword, this.pgDatabase] = await this.promptForPublicConnectionDetails();
+        [this.publicHost, this.publicPort, this.pgUser, this.pgPassword, this.pgDatabase] = await this.promptForPublicConnectionDetails(existingConfig);
         this.conn = await this.createConnection(this.publicHost, this.publicPort, this.pgUser, this.pgPassword, this.pgDatabase);
       }
 
@@ -285,12 +290,12 @@ export default class SetupDbInit extends Command {
         if (!flags['update-permissions']) {
           // First iteration or if the user chose to connect to a different cluster
           if (!this.conn) {
-            [this.publicHost, this.publicPort, this.vpcHost, this.vpcPort, this.pgUser, this.pgPassword, this.pgDatabase] = await this.promptForConnectionDetails();
+            [this.publicHost, this.publicPort, this.vpcHost, this.vpcPort, this.pgUser, this.pgPassword, this.pgDatabase] = await this.promptForConnectionDetails(existingConfig);
             this.conn = await this.createConnection(this.publicHost, this.publicPort, this.pgUser, this.pgPassword, this.pgDatabase);
-          } else if (await confirm({ message: 'Do you want to connect to a different database cluster for this database?' })) {
+          } else if (await confirm({ message: 'Do you want to connect to a different database cluster for this database?', default: false })) {
             // User chose to connect to a different cluster
             await this.conn.end();
-            [this.publicHost, this.publicPort, this.vpcHost, this.vpcPort, this.pgUser, this.pgPassword, this.pgDatabase] = await this.promptForConnectionDetails();
+            [this.publicHost, this.publicPort, this.vpcHost, this.vpcPort, this.pgUser, this.pgPassword, this.pgDatabase] = await this.promptForConnectionDetails(existingConfig);
             this.conn = await this.createConnection(this.publicHost, this.publicPort, this.pgUser, this.pgPassword, this.pgDatabase);
           }
         }
@@ -308,13 +313,40 @@ export default class SetupDbInit extends Command {
           this.log(chalk.blue(`Setting up database: ${db.name} for user: ${db.user}`))
 
           let dbPassword: string;
-          const useRandomPassword = await confirm({ message: `Do you want to use a random password for ${db.user}?` });
-          if (useRandomPassword) {
-            dbPassword = Math.random().toString(36).slice(-12); // Generate a random 12-character password
-            this.log(chalk.green(`Generated random password for ${db.user}`));
+          const existingDsn = existingConfig.db?.[`${db.user}_DB_CONNECTION_STRING`];
+          if (existingDsn) {
+            const keepExistingPassword = await confirm({
+              message: `An existing password was found for ${db.user}. Do you want to keep it?`,
+              default: true
+            });
+            if (keepExistingPassword) {
+              dbPassword = existingDsn.match(/postgres:\/\/.*:(.*)@/)?.[1] || '';
+              this.log(chalk.green(`Using existing password for ${db.user}`));
+            } else {
+              const useRandomPassword = await confirm({
+                message: `Do you want to use a random password for ${db.user}?`,
+                default: true
+              });
+              if (useRandomPassword) {
+                dbPassword = Math.random().toString(36).slice(-12); // Generate a random 12-character password
+                this.log(chalk.green(`Generated random password for ${db.user}`));
+              } else {
+                dbPassword = await password({ message: `Enter new password for ${db.user}:` });
+              }
+            }
           } else {
-            dbPassword = await password({ message: `Enter password for ${db.user}:` });
+            const useRandomPassword = await confirm({
+              message: `Do you want to use a random password for ${db.user}?`,
+              default: true
+            });
+            if (useRandomPassword) {
+              dbPassword = Math.random().toString(36).slice(-12); // Generate a random 12-character password
+              this.log(chalk.green(`Generated random password for ${db.user}`));
+            } else {
+              dbPassword = await password({ message: `Enter password for ${db.user}:` });
+            }
           }
+
           await this.initializeDatabase(this.conn, db.name, db.user.toLowerCase(), dbPassword, flags.clean)
 
           const dsn = `postgres://${db.user.toLowerCase()}:${dbPassword}@${this.vpcHost}:${this.vpcPort}/${db.name}?sslmode=require`
@@ -341,24 +373,51 @@ export default class SetupDbInit extends Command {
     }
   }
 
-  private async promptForConnectionDetails(): Promise<[string, string, string, string, string, string, string]> {
+  private async promptForConnectionDetails(existingConfig: any): Promise<[string, string, string, string, string, string, string]> {
     this.log(chalk.blue('First, provide connection information for the database instance. This will only be used for creating users and databases. This information will not be persisted in your configuration repo.'));
     const publicHost = await input({ message: 'Enter public PostgreSQL host:', default: 'localhost' })
     const publicPort = await input({ message: 'Enter public PostgreSQL port:', default: '5432' })
     const pgUser = await input({ message: 'Enter PostgreSQL admin username:', default: 'admin' })
     const pgPassword = await password({ message: 'Enter PostgreSQL admin password:' })
     const pgDatabase = await input({ message: 'Enter PostgreSQL database name:', default: 'postgres' })
+
     this.log(chalk.blue('Now, provide connection information for pods. This will often be use localhost or a private IP. This information is stored in DSN strings in your configuration file and used in Secrets.'));
-    const privateHost = await input({ message: 'Enter PostgreSQL host:', default: 'localhost' })
-    const privatePort = await input({ message: 'Enter PostgreSQL port:', default: '5432' })
+
+    // Extract host and port from an existing DSN if available
+    let defaultPrivateHost = 'localhost'
+    let defaultPrivatePort = '5432'
+    const existingDsn = existingConfig.db?.SCROLL_DB_CONNECTION_STRING
+    if (existingDsn) {
+      const dsnMatch = existingDsn.match(/postgres:\/\/.*:.*@(.+):(\d+)\/.*/)
+      if (dsnMatch) {
+        defaultPrivateHost = dsnMatch[1]
+        defaultPrivatePort = dsnMatch[2]
+      }
+    }
+
+    const privateHost = await input({ message: 'Enter PostgreSQL host:', default: defaultPrivateHost })
+    const privatePort = await input({ message: 'Enter PostgreSQL port:', default: defaultPrivatePort })
 
     return [publicHost, publicPort, privateHost, privatePort, pgUser, pgPassword, pgDatabase]
   }
 
-  private async promptForPublicConnectionDetails(): Promise<[string, string, string, string, string]> {
+  private async promptForPublicConnectionDetails(existingConfig: any): Promise<[string, string, string, string, string]> {
     this.log(chalk.blue('Provide connection information for the database instance. This will only be used for updating permissions.'));
-    const publicHost = await input({ message: 'Enter public PostgreSQL host:', default: 'localhost' })
-    const publicPort = await input({ message: 'Enter public PostgreSQL port:', default: '5432' })
+
+    // Extract host and port from an existing DSN if available
+    let defaultHost = 'localhost'
+    let defaultPort = '5432'
+    const existingDsn = existingConfig.db?.SCROLL_DB_CONNECTION_STRING
+    if (existingDsn) {
+      const dsnMatch = existingDsn.match(/postgres:\/\/.*:.*@(.+):(\d+)\/.*/)
+      if (dsnMatch) {
+        defaultHost = dsnMatch[1]
+        defaultPort = dsnMatch[2]
+      }
+    }
+
+    const publicHost = await input({ message: 'Enter public PostgreSQL host:', default: defaultHost })
+    const publicPort = await input({ message: 'Enter public PostgreSQL port:', default: defaultPort })
     const pgUser = await input({ message: 'Enter PostgreSQL admin username:', default: 'admin' })
     const pgPassword = await password({ message: 'Enter PostgreSQL admin password:' })
     const pgDatabase = await input({ message: 'Enter PostgreSQL database name:', default: 'postgres' })
