@@ -247,7 +247,7 @@ export default class SetupDomains extends Command {
           EXTERNAL_RPC_URI_L2: `${protocol}://l2-rpc.${urlEnding}`,
           BRIDGE_API_URI: `${protocol}://bridge-history-api.${urlEnding}/api`,
           ROLLUPSCAN_API_URI: `${protocol}://rollup-explorer-backend.${urlEnding}/api`,
-          EXTERNAL_EXPLORER_URI_L2: `${protocol}://l2-explorer.${urlEnding}`,
+          EXTERNAL_EXPLORER_URI_L2: `${protocol}://blockscout.${urlEnding}`,
         }
 
         ingressConfig = {
