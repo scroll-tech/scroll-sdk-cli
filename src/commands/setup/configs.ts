@@ -1,10 +1,10 @@
-import { Command } from '@oclif/core'
+import { Command, Flags } from '@oclif/core'
 import Docker from 'dockerode';
 import * as fs from 'fs'
 import * as path from 'path'
 import * as toml from '@iarna/toml'
 import chalk from 'chalk'
-import { confirm, input } from '@inquirer/prompts'
+import { confirm, input, select } from '@inquirer/prompts'
 import { ethers } from 'ethers'
 
 export default class SetupConfigs extends Command {
@@ -12,11 +12,19 @@ export default class SetupConfigs extends Command {
 
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
+    '<%= config.bin %> <%= command.id %> --image-tag v0.0.24',
   ]
 
-  private async runDockerCommand(): Promise<void> {
+  static override flags = {
+    'image-tag': Flags.string({
+      description: 'Specify the Docker image tag to use',
+      required: false,
+    }),
+  }
+
+  private async runDockerCommand(imageTag: string): Promise<void> {
     const docker = new Docker();
-    const image = 'scrolltech/scroll-stack-contracts:gen-configs-v0.0.20';
+    const image = `scrolltech/scroll-stack-contracts:${imageTag}`;
 
     try {
       this.log(chalk.cyan("Pulling Docker Image..."))
@@ -365,7 +373,52 @@ export default class SetupConfigs extends Command {
     }
   }
 
+  private async fetchDockerTags(): Promise<string[]> {
+    try {
+      const response = await fetch('https://registry.hub.docker.com/v2/repositories/scrolltech/scroll-stack-contracts/tags?page_size=100');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      return data.results
+        .map((tag: any) => tag.name)
+        .filter((tag: string) => tag.startsWith('gen-configs'));
+    } catch (error) {
+      this.error(`Failed to fetch Docker tags: ${error}`);
+    }
+  }
+
+  private async getDockerImageTag(providedTag: string | undefined): Promise<string> {
+    const defaultTag = 'gen-configs-v0.0.24';
+
+    if (!providedTag) {
+      return defaultTag;
+    }
+
+    const tags = await this.fetchDockerTags();
+
+    if (providedTag.startsWith('gen-configs-v') && tags.includes(providedTag)) {
+      return providedTag;
+    } else if (providedTag.startsWith('v') && tags.includes(`gen-configs-${providedTag}`)) {
+      return `gen-configs-${providedTag}`;
+    } else if (/^\d+\.\d+\.\d+$/.test(providedTag) && tags.includes(`gen-configs-v${providedTag}`)) {
+      return `gen-configs-v${providedTag}`;
+    }
+
+    const selectedTag = await select({
+      message: 'Select a Docker image tag:',
+      choices: tags.map(tag => ({ name: tag, value: tag })),
+    });
+
+    return selectedTag;
+  }
+
   public async run(): Promise<void> {
+    const { flags } = await this.parse(SetupConfigs)
+
+    const imageTag = await this.getDockerImageTag(flags['image-tag']);
+    this.log(chalk.blue(`Using Docker image tag: ${imageTag}`));
+
     this.log(chalk.blue('Checking L1_CONTRACT_DEPLOYMENT_BLOCK...'))
     await this.updateL1ContractDeploymentBlock()
 
@@ -376,7 +429,7 @@ export default class SetupConfigs extends Command {
     await this.updateSequencerEnode()
 
     this.log(chalk.blue('Running docker command to generate configs...'))
-    await this.runDockerCommand()
+    await this.runDockerCommand(imageTag)
 
     this.log(chalk.blue('Creating secrets folder...'))
     this.createSecretsFolder()
