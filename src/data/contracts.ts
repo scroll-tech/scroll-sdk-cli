@@ -17,8 +17,6 @@ export const contracts: DeployedContract[] = [
     { name: "L1_PROXY_ADMIN_ADDR", initializes: false, owned: true, layer: Layer.L1 },
     { name: "L1_PROXY_IMPLEMENTATION_PLACEHOLDER_ADDR", initializes: false, owned: false, layer: Layer.L1 },
     { name: "L1_WHITELIST_ADDR", initializes: true, owned: true, layer: Layer.L1 },
-    { name: "L2_GAS_PRICE_ORACLE_IMPLEMENTATION_ADDR", initializes: false, owned: false, layer: Layer.L1 },
-    { name: "L2_GAS_PRICE_ORACLE_PROXY_ADDR", initializes: true, owned: true, layer: Layer.L1 },
     { name: "L1_SCROLL_CHAIN_IMPLEMENTATION_ADDR", initializes: false, owned: false, layer: Layer.L1 },
     { name: "L1_SCROLL_CHAIN_PROXY_ADDR", initializes: true, owned: true, layer: Layer.L1 },
     { name: "L1_SCROLL_MESSENGER_IMPLEMENTATION_ADDR", initializes: false, owned: false, layer: Layer.L1 },
