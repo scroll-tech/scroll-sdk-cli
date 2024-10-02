@@ -317,6 +317,8 @@ export default class HelperFundAccounts extends Command {
     try {
       const result = await provider.send('anvil_setBalance', [address, ethers.parseEther(amount.toString()).toString()])
       await this.logAddress(address, `Successfully funded with ${amount} ETH`, layer)
+      await provider.send('anvil_mine', [1])
+      await this.log('Minted 1 block.')
       return result
     } catch (error) {
       this.error(
