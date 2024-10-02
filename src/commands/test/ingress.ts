@@ -1,30 +1,31 @@
 import * as k8s from '@kubernetes/client-node'
-import { Command, Flags } from '@oclif/core'
+import {Command, Flags} from '@oclif/core'
 import chalk from 'chalk'
 import terminalLink from 'terminal-link'
+import WebSocket from 'ws'
 
-import { parseTomlConfig } from '../../utils/config-parser.js'
+import {parseTomlConfig} from '../../utils/config-parser.js'
 
 export default class TestIngress extends Command {
   static override description = 'Check for required ingress hosts and validate frontend URLs'
 
   static override flags = {
-    config: Flags.string({ char: 'c', description: 'Path to config.toml file' }),
-    dev: Flags.boolean({ char: 'd', description: 'Include development ingresses' }),
-    namespace: Flags.string({ char: 'n', default: 'default', description: 'Kubernetes namespace' }),
+    config: Flags.string({char: 'c', description: 'Path to config.toml file'}),
+    dev: Flags.boolean({char: 'd', description: 'Include development ingresses'}),
+    namespace: Flags.string({char: 'n', default: 'default', description: 'Kubernetes namespace'}),
   }
 
   private configValues: Record<string, string> = {}
 
   private frontendToIngressMapping: Record<string, string> = {
-    'EXTERNAL_RPC_URI_L2': 'RPC_GATEWAY_HOST',
-    'BRIDGE_API_URI': 'BRIDGE_HISTORY_API_HOST',
-    'ROLLUPSCAN_API_URI': 'ROLLUP_EXPLORER_API_HOST',
-    'EXTERNAL_EXPLORER_URI_L2': 'BLOCKSCOUT_HOST',
+    EXTERNAL_RPC_URI_L2: 'RPC_GATEWAY_HOST',
+    BRIDGE_API_URI: 'BRIDGE_HISTORY_API_HOST',
+    ROLLUPSCAN_API_URI: 'ROLLUP_EXPLORER_API_HOST',
+    EXTERNAL_EXPLORER_URI_L2: 'BLOCKSCOUT_HOST',
   }
 
   public async run(): Promise<void> {
-    const { flags } = await this.parse(TestIngress)
+    const {flags} = await this.parse(TestIngress)
 
     if (flags.config) {
       this.loadConfig(flags.config)
@@ -107,6 +108,22 @@ export default class TestIngress extends Command {
       } else if (name === 'coordinator-api') {
         response = await fetch(`http://${host}/coordinator/v1/challenge/`, {
           method: 'GET',
+        })
+      } else if (name === 'l2-rpc-websocket') {
+        return new Promise((resolve) => {
+          const ws = new WebSocket(`ws://${host}`)
+          ws.onopen = () => {
+            ws.close()
+            resolve(true)
+          }
+          ws.onerror = () => {
+            resolve(false)
+          }
+          // Set a timeout in case the connection hangs
+          setTimeout(() => {
+            ws.close()
+            resolve(false)
+          }, 5000)
         })
       } else {
         response = await fetch(`http://${host}`)
