@@ -57,6 +57,11 @@ export default class SetupDomains extends Command {
       delete existingConfig.ingress.L1_DEVNET_HOST
     }
 
+    // Remove L1_EXPLORER_HOST from ingress if not using Anvil
+    if (generalConfig.CHAIN_NAME_L1 !== 'Anvil L1' && existingConfig.ingress.L1_EXPLORER_HOST) {
+      delete existingConfig.ingress.L1_EXPLORER_HOST
+    }
+
     // Convert the updated config back to TOML string
     const updatedContent = toml.stringify(existingConfig)
 
@@ -193,7 +198,7 @@ export default class SetupDomains extends Command {
         RPC_GATEWAY_HOST: `l2-rpc.${urlEnding}`,
         BLOCKSCOUT_HOST: `blockscout.${urlEnding}`,
         ADMIN_SYSTEM_DASHBOARD_HOST: `admin-system-dashboard.${urlEnding}`,
-        ...(usesAnvil ? { L1_DEVNET_HOST: `l1-devnet.${urlEnding}` } : {}),
+        ...(usesAnvil ? { L1_DEVNET_HOST: `l1-devnet.${urlEnding}`, L1_EXPLORER_HOST: `l1-explorer.${urlEnding}` } : {}),
       };
     } else {
       protocol = await select({
@@ -240,6 +245,10 @@ export default class SetupDomains extends Command {
         ingressConfig.L1_DEVNET_HOST = await input({
           message: 'Enter L1_DEVNET_HOST:',
           default: existingConfig.ingress?.L1_DEVNET_HOST || 'l1-devnet.scrollsdk',
+        });
+        ingressConfig.L1_EXPLORER_HOST = await input({
+          message: 'Enter L1_EXPLORER_HOST:',
+          default: existingConfig.ingress?.L1_EXPLORER_HOST || 'l1-explorer.scrollsdk',
         });
       }
 
