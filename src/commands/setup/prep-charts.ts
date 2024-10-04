@@ -11,43 +11,23 @@ import chalk from 'chalk'
 const execAsync = promisify(exec)
 
 export default class SetupPrepCharts extends Command {
-  static override description = 'Prepare Helm charts for Scroll SDK'
+  static override description = 'Validate Makefile and prepare Helm charts for Scroll SDK'
 
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
     '<%= config.bin %> <%= command.id %> --github-username=your-username --github-token=your-token',
-    '<%= config.bin %> <%= command.id %> --no-pull',
+    '<%= config.bin %> <%= command.id %> --values-dir=./custom-values',
+    '<%= config.bin %> <%= command.id %> --skip-auth-check',
   ]
 
   static override flags = {
     'github-username': Flags.string({ description: 'GitHub username', required: false }),
     'github-token': Flags.string({ description: 'GitHub Personal Access Token', required: false }),
-    'pull': Flags.boolean({
-      description: 'Pull and untar charts',
-      allowNo: true,
-      default: true,
-    }),
+    'values-dir': Flags.string({ description: 'Directory containing values files', default: './values' }),
+    'skip-auth-check': Flags.boolean({ description: 'Skip authentication check for individual charts', default: false }),
   }
 
-  private charts = [
-    'admin-system-backend', 'admin-system-cron', 'admin-system-dashboard',
-    'balance-checker', 'blockscout', 'blockscout-sc-verifier', 'bridge-history-api',
-    'bridge-history-fetcher', 'chain-monitor', 'contracts', 'coordinator-api',
-    'coordinator-cron', 'external-secrets-lib', 'frontends', 'gas-oracle', 'l2-bootnode', 'l2-rpc', 'l2-sequencer',
-    'rollup-explorer-backend', 'rollup-node', 'scroll-common', 'scroll-sdk'
-  ]
-
-  private chartToConfigMapping: Record<string, string> = {
-    'rollup-explorer-backend': 'ingress.ROLLUP_EXPLORER_API_HOST',
-    'frontends': 'ingress.FRONTEND_HOST',
-    'coordinator-api': 'ingress.COORDINATOR_API_HOST',
-    'bridge-history-api': 'ingress.BRIDGE_HISTORY_API_HOST',
-    'l2-rpc': 'ingress.RPC_GATEWAY_HOST',
-    'blockscout': 'ingress.BLOCKSCOUT_HOST'
-    // Add more mappings as needed, using 'frontend.DOMAIN_ENDING' for charts that should use it
-  }
-
-  private configMapping: Record<string, string> = {
+  private configMapping: Record<string, string | ((chartName: string, productionNumber: string) => string)> = {
     'SCROLL_L1_RPC': 'general.L1_RPC_ENDPOINT',
     'SCROLL_L2_RPC': 'general.L2_RPC_ENDPOINT',
     'CHAIN_ID': 'general.CHAIN_ID_L2',
@@ -58,8 +38,26 @@ export default class SetupPrepCharts extends Command {
     'L1_RPC_ENDPOINT': 'general.L1_RPC_ENDPOINT',
     'L2_RPC_ENDPOINT': 'general.L2_RPC_ENDPOINT',
     'L1_SCROLL_CHAIN_PROXY_ADDR': 'contracts.L1_SCROLL_CHAIN_PROXY_ADDR',
-    'L2GETH_SIGNER_ADDRESS': 'sequencer.L2GETH_SIGNER_ADDRESS',
+    'L2GETH_SIGNER_ADDRESS': (chartName, productionNumber) =>
+      productionNumber === '0' ? 'sequencer.L2GETH_SIGNER_ADDRESS' : `sequencer.sequencer-${productionNumber}.L2GETH_SIGNER_ADDRESS`,
     'L2GETH_PEER_LIST': 'sequencer.L2_GETH_STATIC_PEERS',
+    'L2GETH_KEYSTORE': (chartName, productionNumber) =>
+      productionNumber === '0' ? 'sequencer.L2GETH_KEYSTORE' : `sequencer.sequencer-${productionNumber}.L2GETH_KEYSTORE`,
+    'L2GETH_PASSWORD': (chartName, productionNumber) =>
+      productionNumber === '0' ? 'sequencer.L2GETH_PASSWORD' : `sequencer.sequencer-${productionNumber}.L2GETH_PASSWORD`,
+    'L2GETH_NODEKEY': (chartName, productionNumber) =>
+      chartName.startsWith('l2-bootnode') ? `bootnode.bootnode-${productionNumber}.L2GETH_NODEKEY` :
+        (productionNumber === '0' ? 'sequencer.L2GETH_NODEKEY' : `sequencer.sequencer-${productionNumber}.L2GETH_NODEKEY`),
+    // Add ingress host mappings
+    'FRONTEND_HOST': 'ingress.FRONTEND_HOST',
+    'BRIDGE_HISTORY_API_HOST': 'ingress.BRIDGE_HISTORY_API_HOST',
+    'ROLLUP_EXPLORER_API_HOST': 'ingress.ROLLUP_EXPLORER_API_HOST',
+    'COORDINATOR_API_HOST': 'ingress.COORDINATOR_API_HOST',
+    'RPC_GATEWAY_HOST': 'ingress.RPC_GATEWAY_HOST',
+    'BLOCKSCOUT_HOST': 'ingress.BLOCKSCOUT_HOST',
+    'ADMIN_SYSTEM_DASHBOARD_HOST': 'ingress.ADMIN_SYSTEM_DASHBOARD_HOST',
+    'L1_DEVNET_HOST': 'ingress.L1_DEVNET_HOST',
+    'L1_EXPLORER_HOST': 'ingress.L1_EXPLORER_HOST',
     // Add more mappings as needed
   }
 
@@ -76,11 +74,16 @@ export default class SetupPrepCharts extends Command {
   }
 
   private getConfigValue(key: string, config: any): any {
-    const [section, subKey] = key.split('.')
-    if (section === 'contracts' && this.contractsConfig[subKey]) {
-      return this.contractsConfig[subKey]
+    const parts = key.split('.')
+    let value = config
+    for (const part of parts) {
+      if (value && typeof value === 'object' && part in value) {
+        value = value[part]
+      } else {
+        return undefined
+      }
     }
-    return this.getNestedValue(config, key)
+    return value
   }
 
   private async authenticateGHCR(username: string, token: string): Promise<void> {
@@ -89,191 +92,204 @@ export default class SetupPrepCharts extends Command {
     this.log('Authenticated with GitHub Container Registry')
   }
 
-  private async pullChart(chart: string): Promise<boolean> {
+  private async validateOCIAccess(ociUrl: string): Promise<boolean> {
     try {
-      const command = `helm pull oci://ghcr.io/scroll-tech/scroll-sdk/helm/${chart}`
-      await execAsync(command)
-      this.log(`Pulled chart: ${chart}`)
+      await execAsync(`helm show chart ${ociUrl}`)
       return true
     } catch (error) {
-      this.log(`Failed to pull chart: ${chart}`)
       return false
     }
   }
 
-  private async untarCharts(): Promise<void> {
-    const command = 'for file in *.tgz; do tar -xzvf "$file"; done'
-    await execAsync(command)
-    this.log('Untarred all charts')
-  }
+  private async processProductionYaml(valuesDir: string, config: any): Promise<{ updated: number; skipped: number }> {
+    const productionFiles = fs.readdirSync(valuesDir)
+      .filter(file => file.endsWith('-production.yaml') || file.match(/-production-\d+\.yaml$/))
 
-  private copyFileIfExists(fileName: string, targetDir: string): void {
-    const sourcePath = path.join(process.cwd(), fileName)
-    const targetPath = path.join(process.cwd(), targetDir, 'configs', fileName)
+    let updatedCharts = 0
+    let skippedCharts = 0
 
-    if (fs.existsSync(sourcePath)) {
-      // Create the entire target directory path if it doesn't exist
-      const targetDirPath = path.dirname(targetPath)
-      fs.mkdirSync(targetDirPath, { recursive: true })
+    for (const file of productionFiles) {
+      const yamlPath = path.join(valuesDir, file)
+      const chartName = file.replace(/-production(-\d+)?\.yaml$/, '')
+      const productionNumber = file.match(/-production-(\d+)\.yaml$/)?.[1] || '0'
 
-      fs.copyFileSync(sourcePath, targetPath)
-      this.log(`Copied ${fileName} to ${targetDir}/configs/`)
-    } else {
-      this.log(`File ${fileName} does not exist in the current directory, skipping.`)
-    }
-  }
+      this.log(`Processing ${file} for chart ${chartName}...`)
 
-  private moveConfigFiles(): void {
-    const configFiles = [
-      { file: 'balance-checker-config.json', dir: 'balance-checker' },
-      { file: 'bridge-history-config.json', dir: 'bridge-history-api' },
-      { file: 'bridge-history-config.json', dir: 'bridge-history-fetcher' },
-      { file: 'chain-monitor-config.json', dir: 'chain-monitor' },
-      { file: 'coordinator-config.json', dir: 'coordinator-api' },
-      { file: 'coordinator-config.json', dir: 'coordinator-cron' },
-      { file: 'frontend-config', dir: 'frontends' },
-      { file: 'genesis.json', dir: 'scroll-common' },
-      { file: 'rollup-config.json', dir: 'gas-oracle' },
-      { file: 'rollup-config.json', dir: 'rollup-node' },
-      { file: 'rollup-explorer-backend-config.json', dir: 'rollup-explorer-backend' }
-    ]
+      const productionYamlContent = fs.readFileSync(yamlPath, 'utf8')
+      let productionYaml = yaml.load(productionYamlContent) as any
 
-    for (const { file, dir } of configFiles) {
-      this.copyFileIfExists(file, dir)
-    }
+      let updated = false
+      const changes: Array<{ key: string; oldValue: string; newValue: string }> = []
 
-    this.log('Config file copy operation completed.')
-  }
-
-  private async processProductionYaml(chartDir: string, config: any): Promise<boolean> {
-    let yamlPath: string
-    if (chartDir === 'l2-bootnode' || chartDir === 'l2-sequencer') {
-      yamlPath = path.join(process.cwd(), chartDir, 'values', 'production-1.yaml')
-      if (!fs.existsSync(yamlPath)) {
-        this.log(chalk.yellow(`production-1.yaml not found for ${chartDir}`))
-        return false
-      }
-      this.log(chalk.cyan(`Using production-1.yaml for ${chartDir}`))
-    } else {
-      yamlPath = path.join(process.cwd(), chartDir, 'values', 'production.yaml')
-      if (!fs.existsSync(yamlPath)) {
-        this.log(chalk.yellow(`production.yaml not found for ${chartDir}`))
-        return false
-      }
-      this.log(chalk.cyan(`Using production.yaml for ${chartDir}`))
-    }
-
-    const productionYamlContent = fs.readFileSync(yamlPath, 'utf8')
-    const productionYaml = yaml.load(productionYamlContent) as any
-
-    let updated = false
-    const changes: Array<{ key: string; oldValue: string; newValue: string }> = []
-    const emptyUnmappedKeys: string[] = []
-
-    // Process configMaps
-    let envData: any
-    if (chartDir === 'contracts') {
-      envData = productionYaml.configMaps?.['contracts-deployment-env']?.data
-    } else {
-      envData = productionYaml.configMaps?.env?.data
-    }
-
-    if (envData) {
-      for (const [key, value] of Object.entries(envData)) {
-        if (value === '') {
-          const configKey = this.configMapping[key]
-          if (configKey) {
-            const configValue = this.getConfigValue(configKey, config)
-            if (configValue !== undefined && configValue !== null) {
-              // Convert all values to strings
-              const stringValue = String(configValue)
-              changes.push({ key, oldValue: value as string, newValue: stringValue })
-              envData[key] = stringValue
-              updated = true
-            } else {
-              this.log(chalk.yellow(`${chartDir}: No value found for ${configKey}`))
-            }
-          } else {
-            emptyUnmappedKeys.push(key)
-          }
-        }
-      }
-    }
-
-    // Process ingress
-    if (productionYaml.ingress?.main?.hosts) {
-      const configKey = this.chartToConfigMapping[chartDir]
-      if (configKey) {
-        const configValue = this.getConfigValue(configKey, config)
-
-        if (configValue && productionYaml.ingress.main.hosts[0]) {
-          const oldHost = productionYaml.ingress.main.hosts[0].host
-          if (oldHost !== configValue) {  // Only update if there's an actual change
-            productionYaml.ingress.main.hosts[0].host = configValue
-            changes.push({ key: 'ingress.main.hosts[0].host', oldValue: oldHost, newValue: configValue })
-            updated = true
-
-            // Update TLS section if it exists
-            if (productionYaml.ingress.main.tls && productionYaml.ingress.main.tls.length > 0) {
-              productionYaml.ingress.main.tls.forEach((tlsConfig: any) => {
-                if (tlsConfig.hosts && tlsConfig.hosts.length > 0) {
-                  const oldTlsHost = tlsConfig.hosts[0]
-                  if (oldTlsHost !== configValue) {
-                    tlsConfig.hosts[0] = configValue
-                    changes.push({ key: 'ingress.main.tls[].hosts[0]', oldValue: oldTlsHost, newValue: configValue })
-                  }
+      // Process configMaps
+      if (productionYaml.configMaps?.env?.data) {
+        const envData = productionYaml.configMaps.env.data
+        for (const [key, value] of Object.entries(envData)) {
+          if (value === '' || value === '[""]' || value === '[]' ||
+            (Array.isArray(value) && (value.length === 0 || (value.length === 1 && value[0] === '')))) {
+            const configMapping = this.configMapping[key]
+            if (configMapping) {
+              let configKey: string
+              if (typeof configMapping === 'function') {
+                configKey = configMapping(chartName, productionNumber)
+              } else {
+                configKey = configMapping
+              }
+              const configValue = this.getConfigValue(configKey, config)
+              if (configValue !== undefined && configValue !== null) {
+                let newValue: string | string[]
+                if (Array.isArray(configValue)) {
+                  newValue = JSON.stringify(configValue)
+                } else {
+                  newValue = String(configValue)
                 }
-              })
+                changes.push({ key, oldValue: JSON.stringify(value), newValue: newValue })
+                envData[key] = newValue
+                updated = true
+              } else {
+                this.log(chalk.yellow(`${chartName}: No value found for ${configKey}`))
+              }
             }
           }
         }
       }
-    }
 
-    if (updated || emptyUnmappedKeys.length > 0) {
-      this.log(`\nFor ${chalk.cyan(chartDir)}/values/${path.basename(yamlPath)}:`)
+      // Process ingress
+      if (productionYaml.ingress?.main?.hosts) {
+        const hosts = productionYaml.ingress.main.hosts
+        let ingressUpdated = false
+        for (let i = 0; i < hosts.length; i++) {
+          if (hosts[i].host === '') {
+            let configValue: string | undefined
 
-      if (changes.length > 0) {
-        this.log(chalk.green('Changes:'))
-        for (const change of changes) {
-          this.log(`  ${chalk.yellow(change.key)}: "${change.oldValue}" -> "${change.newValue}"`)
+            // Check for direct mapping first
+            const directMappingKey = `ingress.${chartName.toUpperCase().replace(/-/g, '_')}_HOST`
+            configValue = this.getConfigValue(directMappingKey, config)
+
+            // If direct mapping doesn't exist, try alternative mappings
+            if (!configValue) {
+              const alternativeMappings: Record<string, string> = {
+                'frontends': 'FRONTEND_HOST',
+                'bridge-history-api': 'BRIDGE_HISTORY_API_HOST',
+                'rollup-explorer-backend': 'ROLLUP_EXPLORER_API_HOST',
+                'coordinator-api': 'COORDINATOR_API_HOST',
+                'l2-rpc': 'RPC_GATEWAY_HOST',
+                'blockscout': 'BLOCKSCOUT_HOST',
+                'admin-system-dashboard': 'ADMIN_SYSTEM_DASHBOARD_HOST',
+              }
+
+              const alternativeKey = alternativeMappings[chartName]
+              if (alternativeKey) {
+                configValue = this.getConfigValue(`ingress.${alternativeKey}`, config)
+              }
+            }
+
+            if (configValue) {
+              changes.push({ key: `ingress.main.hosts[${i}].host`, oldValue: '', newValue: configValue })
+              hosts[i].host = configValue
+              ingressUpdated = true
+            }
+          }
         }
-      }
-
-      if (emptyUnmappedKeys.length > 0) {
-        this.log(chalk.yellow('Empty strings without mapping:'))
-        for (const key of emptyUnmappedKeys) {
-          this.log(`  ${key}`)
+        if (ingressUpdated) {
+          updated = true
+          // Update the tls section if it exists
+          if (productionYaml.ingress.main.tls) {
+            productionYaml.ingress.main.tls.forEach((tlsEntry: any) => {
+              if (Array.isArray(tlsEntry.hosts)) {
+                tlsEntry.hosts = hosts.map((host: any) => host.host)
+              }
+            })
+          }
         }
       }
 
       if (updated) {
-        const shouldUpdate = await confirm({ message: `Do you want to apply these changes to ${path.basename(yamlPath)}?` })
+        this.log(`\nFor ${chalk.cyan(file)}:`)
+        this.log(chalk.green('Changes:'))
+        for (const change of changes) {
+          this.log(`  ${chalk.yellow(change.key)}: ${change.oldValue} -> ${change.newValue}`)
+        }
+
+        const shouldUpdate = await confirm({ message: `Do you want to apply these changes to ${file}?` })
         if (shouldUpdate) {
-          // Use a custom YAML.dump function with specific options
           const yamlString = yaml.dump(productionYaml, {
-            lineWidth: -1, // Disable line wrapping
+            lineWidth: -1,
             noRefs: true,
             quotingType: '"',
             forceQuotes: true,
-          });
+          })
 
           fs.writeFileSync(yamlPath, yamlString)
-          this.log(chalk.green(`Updated ${path.basename(yamlPath)} for ${chartDir}`))
-          return true
+          this.log(chalk.green(`Updated ${file}`))
+          updatedCharts++
         } else {
-          this.log(chalk.yellow(`Skipped updating ${path.basename(yamlPath)} for ${chartDir}`))
+          this.log(chalk.yellow(`Skipped updating ${file}`))
+          skippedCharts++
         }
+      } else {
+        this.log(chalk.yellow(`No changes needed in ${file}`))
+        skippedCharts++
       }
-    } else {
-      this.log(chalk.yellow(`${chartDir}: No changes needed in ${path.basename(yamlPath)}`))
     }
 
-    return false
+    return { updated: updatedCharts, skipped: skippedCharts }
   }
 
   private getNestedValue(obj: any, path: string): any {
     return path.split('.').reduce((prev, curr) => prev && prev[curr], obj)
+  }
+
+  private async validateMakefile(skipAuthCheck: boolean): Promise<void> {
+    const makefilePath = path.join(process.cwd(), 'Makefile')
+    if (!fs.existsSync(makefilePath)) {
+      this.error('Makefile not found in the current directory.')
+    }
+
+    const makefileContent = fs.readFileSync(makefilePath, 'utf-8')
+    const installCommands = makefileContent.match(/helm\s+upgrade\s+-i.*?(?=\n\n|\Z)/gs)
+
+    if (!installCommands) {
+      this.warn('No Helm upgrade commands found in the Makefile.')
+      return
+    }
+
+    for (const command of installCommands) {
+      const chartNameMatch = command.match(/upgrade\s+-i\s+(\S+)/)
+      const ociMatch = command.match(/oci:\/\/([^\s]+)/)
+
+      if (chartNameMatch && ociMatch) {
+        const chartName = chartNameMatch[1]
+        const ociUrl = ociMatch[0]
+
+        if (!skipAuthCheck) {
+          const hasAccess = await this.validateOCIAccess(ociUrl)
+
+          if (hasAccess) {
+            this.log(chalk.green(`Access verified for chart: ${chartName}`))
+          } else {
+            this.log(chalk.red(`Unable to access chart: ${chartName}`))
+            this.log('This might be due to authentication issues.')
+            this.log('To authenticate, run the command with the following flags:')
+            this.log('--github-username=your-username --github-token=your-personal-access-token')
+            this.log('You can create a Personal Access Token at: https://github.com/settings/tokens')
+            this.log('Ensure the token has the necessary permissions to access the required repositories.')
+          }
+        }
+
+        const valuesFileMatches = command.match(/-f\s+([^\s]+)/g)
+        if (valuesFileMatches) {
+          for (const match of valuesFileMatches) {
+            const valuesFile = match.split(' ')[1]
+            if (fs.existsSync(valuesFile)) {
+              this.log(chalk.green(`Values file verified: ${valuesFile}`))
+            } else {
+              this.log(chalk.red(`Values file not found: ${valuesFile}`))
+            }
+          }
+        }
+      }
+    }
   }
 
   public async run(): Promise<void> {
@@ -284,43 +300,21 @@ export default class SetupPrepCharts extends Command {
     // Load contracts config before processing yaml files
     this.loadContractsConfig()
 
-    if (flags.pull) {
-      let authenticated = false
-      if (flags['github-username'] && flags['github-token']) {
-        try {
-          await this.authenticateGHCR(flags['github-username'], flags['github-token'])
-          authenticated = true
-        } catch (error) {
-          this.log('Failed to authenticate with GitHub Container Registry')
-        }
+    if (flags['github-username'] && flags['github-token']) {
+      try {
+        await this.authenticateGHCR(flags['github-username'], flags['github-token'])
+      } catch (error) {
+        this.log('Failed to authenticate with GitHub Container Registry')
       }
-
-      let allChartsPulled = true
-      for (const chart of this.charts) {
-        const success = await this.pullChart(chart)
-        if (!success) {
-          allChartsPulled = false
-          break
-        }
-      }
-
-      if (!allChartsPulled) {
-        this.log('Failed to pull all charts. This might be due to authentication issues.')
-        this.log('To authenticate, run the command with the following flags:')
-        this.log('--github-username=your-username --github-token=your-personal-access-token')
-        this.log('You can create a Personal Access Token at: https://github.com/settings/tokens')
-        this.log('Ensure the token has the necessary permissions to access the required repositories.')
-        return
-      }
-
-      // Untar charts
-      await this.untarCharts()
-    } else {
-      this.log('Skipping chart pull and untar steps')
     }
 
-    // Move config files
-    this.moveConfigFiles()
+    let skipAuthCheck = flags['skip-auth-check']
+    if (!skipAuthCheck) {
+      skipAuthCheck = !(await confirm({ message: 'Do you want to perform authentication checks for individual charts?' }))
+    }
+
+    // Validate Makefile
+    await this.validateMakefile(skipAuthCheck)
 
     // Process production.yaml files
     const configPath = path.join(process.cwd(), 'config.toml')
@@ -328,21 +322,13 @@ export default class SetupPrepCharts extends Command {
       const configContent = fs.readFileSync(configPath, 'utf-8')
       const config = toml.parse(configContent)
 
-      let updatedCharts = 0
-      let skippedCharts = 0
-      for (const chart of this.charts) {
-        const updated = await this.processProductionYaml(chart, config)
-        if (updated) {
-          updatedCharts++
-        } else {
-          skippedCharts++
-        }
-      }
+      const valuesDir = flags['values-dir']
+      const { updated, skipped } = await this.processProductionYaml(valuesDir, config)
 
-      this.log(chalk.green(`\nUpdated production.yaml files for ${updatedCharts} chart(s).`))
-      this.log(chalk.yellow(`Skipped ${skippedCharts} chart(s).`))
+      this.log(chalk.green(`\nUpdated production YAML files for ${updated} chart(s).`))
+      this.log(chalk.yellow(`Skipped ${skipped} chart(s).`))
     } else {
-      this.warn('config.toml not found. Skipping production.yaml processing.')
+      this.warn('config.toml not found. Skipping production YAML processing.')
     }
 
     this.log('Chart preparation completed.')
