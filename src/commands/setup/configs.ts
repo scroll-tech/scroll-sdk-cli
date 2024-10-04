@@ -15,12 +15,17 @@ export default class SetupConfigs extends Command {
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
     '<%= config.bin %> <%= command.id %> --image-tag v0.0.25',
+    '<%= config.bin %> <%= command.id %> --configs-dir custom-configs',
   ]
 
   static override flags = {
     'image-tag': Flags.string({
       description: 'Specify the Docker image tag to use',
       required: false,
+    }),
+    'configs-dir': Flags.string({
+      description: 'Directory to store configuration files',
+      default: 'values',
     }),
   }
 
@@ -419,9 +424,9 @@ export default class SetupConfigs extends Command {
     return selectedTag;
   }
 
-  private async processYamlFiles(): Promise<void> {
+  private async processYamlFiles(configsDir: string): Promise<void> {
     const sourceDir = process.cwd();
-    const targetDir = path.join(sourceDir, 'values');
+    const targetDir = path.join(sourceDir, configsDir);
 
     // Ensure the target directory exists
     if (!fs.existsSync(targetDir)) {
@@ -648,6 +653,9 @@ export default class SetupConfigs extends Command {
     const imageTag = await this.getDockerImageTag(flags['image-tag']);
     this.log(chalk.blue(`Using Docker image tag: ${imageTag}`));
 
+    const configsDir = flags['configs-dir'];
+    this.log(chalk.blue(`Using configuration directory: ${configsDir}`));
+
     this.log(chalk.blue('Checking L1_CONTRACT_DEPLOYMENT_BLOCK...'))
     await this.updateL1ContractDeploymentBlock()
 
@@ -676,7 +684,7 @@ export default class SetupConfigs extends Command {
     await this.createEnvFiles()
 
     this.log(chalk.blue('Processing YAML files...'))
-    await this.processYamlFiles()
+    await this.processYamlFiles(configsDir)
 
     this.log(chalk.green('Configuration setup completed.'))
   }
