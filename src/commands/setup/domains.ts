@@ -182,7 +182,7 @@ export default class SetupDomains extends Command {
         BRIDGE_API_URI: `${protocol}://bridge-history-api.${urlEnding}/api`,
         ROLLUPSCAN_API_URI: `${protocol}://rollup-explorer-backend.${urlEnding}/api`,
         EXTERNAL_EXPLORER_URI_L2: `${protocol}://blockscout.${urlEnding}`,
-        ADMIN_SYSTEM_DASHBOARD_URL: `${protocol}://admin-system-dashboard.${urlEnding}`,
+        ADMIN_SYSTEM_DASHBOARD_URI: `${protocol}://admin-system-dashboard.${urlEnding}`,
       };
 
       if (usesAnvil) {
@@ -269,9 +269,9 @@ export default class SetupDomains extends Command {
           message: 'Enter EXTERNAL_EXPLORER_URI_L2:',
           default: existingConfig.frontend?.EXTERNAL_EXPLORER_URI_L2 || `${protocol}://${ingressConfig.BLOCKSCOUT_HOST}`,
         }),
-        ADMIN_SYSTEM_DASHBOARD_URL: await input({
-          message: 'Enter ADMIN_SYSTEM_DASHBOARD_URL:',
-          default: existingConfig.frontend?.ADMIN_SYSTEM_DASHBOARD_URL || `${protocol}://${ingressConfig.ADMIN_SYSTEM_DASHBOARD_HOST}`,
+        ADMIN_SYSTEM_DASHBOARD_URI: await input({
+          message: 'Enter ADMIN_SYSTEM_DASHBOARD_URI:',
+          default: existingConfig.frontend?.ADMIN_SYSTEM_DASHBOARD_URI || `${protocol}://${ingressConfig.ADMIN_SYSTEM_DASHBOARD_HOST}`,
         }),
       };
 
