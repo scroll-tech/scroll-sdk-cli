@@ -112,6 +112,17 @@ export default class SetupGenKeystore extends Command {
         const enodeUrls = sequencerData.map((data, index) => this.getEnodeUrl(data.nodekey, index))
         updatedConfig[key].L2_GETH_STATIC_PEERS = enodeUrls
 
+        // If overwriting or no existing data, add the first sequencer data to the main sequencer section
+        if (overwriteSequencers || !updatedConfig[key].L2GETH_SIGNER_ADDRESS) {
+          if (sequencerData.length > 0) {
+            const firstSequencer = sequencerData[0]
+            updatedConfig[key].L2GETH_SIGNER_ADDRESS = firstSequencer.address
+            updatedConfig[key].L2GETH_KEYSTORE = firstSequencer.keystoreJson
+            updatedConfig[key].L2GETH_PASSWORD = firstSequencer.password
+            updatedConfig[key].L2GETH_NODEKEY = firstSequencer.nodekey
+          }
+        }
+
         // If overwriting, remove all existing sequencer subsections
         if (overwriteSequencers) {
           Object.keys(updatedConfig[key]).forEach(subKey => {
@@ -121,9 +132,9 @@ export default class SetupGenKeystore extends Command {
           })
         }
 
-        // Add sequencer subsections
-        sequencerData.forEach((data, index) => {
-          const subKey = `sequencer-${index}`
+        // Add sequencer subsections starting from sequencer-1
+        sequencerData.slice(1).forEach((data, index) => {
+          const subKey = `sequencer-${index + 1}`
           updatedConfig[key][subKey] = {
             L2GETH_SIGNER_ADDRESS: data.address,
             L2GETH_KEYSTORE: data.keystoreJson,
@@ -229,15 +240,16 @@ export default class SetupGenKeystore extends Command {
     let overwrite = false;
 
     if (changeSequencerKeys) {
-      const existingSequencers = existingConfig.sequencer
-        ? Object.keys(existingConfig.sequencer)
-          .filter(key => key.startsWith('sequencer-'))
-          .filter(key => {
-            const section = existingConfig.sequencer[key];
-            return section && Object.values(section).some(value => value !== '');
-          })
-          .length
-        : 0;
+      const existingSequencers = (existingConfig.sequencer && existingConfig.sequencer.L2GETH_SIGNER_ADDRESS ? 1 : 0) +
+        (existingConfig.sequencer
+          ? Object.keys(existingConfig.sequencer)
+            .filter(key => key.startsWith('sequencer-'))
+            .filter(key => {
+              const section = existingConfig.sequencer[key];
+              return section && Object.values(section).some(value => value !== '');
+            })
+            .length
+          : 0);
 
       const backupCount = await textInput({
         message: `How many backup sequencers do you want to run? (Current: ${Math.max(0, existingSequencers - 1)}, suggested: 1)`,
@@ -256,7 +268,15 @@ export default class SetupGenKeystore extends Command {
           if (totalSequencers <= existingSequencers) {
             this.log(chalk.yellow(`You already have ${existingSequencers} sequencer(s). No new sequencers will be added.`))
             // Keep existing sequencer data
-            for (let i = 0; i < existingSequencers; i++) {
+            if (existingConfig.sequencer.L2GETH_SIGNER_ADDRESS) {
+              sequencerData.push({
+                address: existingConfig.sequencer.L2GETH_SIGNER_ADDRESS,
+                keystoreJson: existingConfig.sequencer.L2GETH_KEYSTORE,
+                password: existingConfig.sequencer.L2GETH_PASSWORD,
+                nodekey: existingConfig.sequencer.L2GETH_NODEKEY,
+              })
+            }
+            for (let i = 1; i < existingSequencers; i++) {
               const sectionName = `sequencer-${i}`
               if (existingConfig.sequencer[sectionName] && Object.values(existingConfig.sequencer[sectionName]).some(value => value !== '')) {
                 sequencerData.push({
@@ -269,7 +289,15 @@ export default class SetupGenKeystore extends Command {
             }
           } else {
             // Keep existing sequencer data
-            for (let i = 0; i < existingSequencers; i++) {
+            if (existingConfig.sequencer.L2GETH_SIGNER_ADDRESS) {
+              sequencerData.push({
+                address: existingConfig.sequencer.L2GETH_SIGNER_ADDRESS,
+                keystoreJson: existingConfig.sequencer.L2GETH_KEYSTORE,
+                password: existingConfig.sequencer.L2GETH_PASSWORD,
+                nodekey: existingConfig.sequencer.L2GETH_NODEKEY,
+              })
+            }
+            for (let i = 1; i < existingSequencers; i++) {
               const sectionName = `sequencer-${i}`
               if (existingConfig.sequencer[sectionName] && Object.values(existingConfig.sequencer[sectionName]).some(value => value !== '')) {
                 sequencerData.push({
@@ -303,6 +331,14 @@ export default class SetupGenKeystore extends Command {
     } else {
       // Keep existing sequencer data
       if (existingConfig.sequencer) {
+        if (existingConfig.sequencer.L2GETH_SIGNER_ADDRESS) {
+          sequencerData.push({
+            address: existingConfig.sequencer.L2GETH_SIGNER_ADDRESS,
+            keystoreJson: existingConfig.sequencer.L2GETH_KEYSTORE,
+            password: existingConfig.sequencer.L2GETH_PASSWORD,
+            nodekey: existingConfig.sequencer.L2GETH_NODEKEY,
+          })
+        }
         Object.keys(existingConfig.sequencer).forEach(key => {
           if (key.startsWith('sequencer-') && Object.values(existingConfig.sequencer[key]).some(value => value !== '')) {
             sequencerData.push({
