@@ -43,8 +43,8 @@ export default class HelperDeriveEnode extends Command {
 
     try {
       const enodeId = this.nodeKeyToEnodeId(nodekey)
-      const enode = `enode://${enodeId}@l2-sequencer-1:30303`
-      const configEntry = `L2_GETH_STATIC_PEERS = '["enode://${enodeId}@l2-sequencer-1:30303"]'`
+      const enode = `enode://${enodeId}@l2-sequencer-0:30303`
+      const configEntry = `L2_GETH_STATIC_PEERS = '["enode://${enodeId}@l2-sequencer-0:30303"]'`
 
       this.log(chalk.cyan('Enode:'))
       this.log(chalk.green(enode))
@@ -52,7 +52,7 @@ export default class HelperDeriveEnode extends Command {
       this.log(chalk.cyan('Config.toml entry:'))
       this.log(chalk.green(configEntry))
       this.log('')
-      this.log(chalk.yellow('Note: You may need to change "l2-sequencer-1" to the appropriate hostname or IP address.'))
+      this.log(chalk.yellow('Note: You may need to change "l2-sequencer-0" to the appropriate hostname or IP address.'))
     } catch (error) {
       this.error(chalk.red(`Failed to derive enode: ${error}`))
     }

@@ -13,6 +13,17 @@ interface KeyPair {
   address: string
 }
 
+interface SequencerData {
+  address: string
+  keystoreJson: string
+  password: string
+  nodekey: string
+}
+
+interface BootnodeData {
+  nodekey: string
+}
+
 export default class SetupGenKeystore extends Command {
   static override description = 'Generate keystore and account keys for L2 Geth'
 
@@ -40,29 +51,32 @@ export default class SetupGenKeystore extends Command {
     return toml.parse(configContent) as any
   }
 
-  private async generateKeystore(existingAddress: string | undefined): Promise<{ address: string, keystoreJson: string, password: string }> {
-    const generateNew = await confirm({
-      message: 'Do you want to generate a new L2 Geth keystore?',
-      default: !existingAddress,
-    })
-
-    if (generateNew) {
-      const password = await input({ message: 'Enter a password for the L2 Geth keystore:' })
-      const wallet = Wallet.createRandom()
-      const encryptedJson = await wallet.encrypt(password)
-      return {
-        address: wallet.address,
-        keystoreJson: encryptedJson,
-        password,
-      }
-    } else {
-      this.log(chalk.yellow('Using existing L2 Geth keystore.'))
-      return {
-        address: existingAddress!,
-        keystoreJson: '',
-        password: '',
-      }
+  private async generateSequencerKeystore(index: number): Promise<SequencerData> {
+    const password = await input({ message: `Enter a password for sequencer-${index} keystore:` })
+    const wallet = Wallet.createRandom()
+    const encryptedJson = await wallet.encrypt(password)
+    return {
+      address: wallet.address,
+      keystoreJson: encryptedJson,
+      password,
+      nodekey: Wallet.createRandom().privateKey.slice(2), // Remove '0x' prefix
     }
+  }
+
+  private getEnodeUrl(nodekey: string, index: number): string {
+    // Remove '0x' prefix if present
+    nodekey = nodekey.startsWith('0x') ? nodekey.slice(2) : nodekey;
+
+    // Create a Wallet instance from the private key
+    const wallet = new ethers.Wallet(nodekey);
+
+    // Get the public key
+    const publicKey = wallet.signingKey.publicKey;
+
+    // Remove '0x04' prefix from public key
+    const publicKeyNoPrefix = publicKey.slice(4);
+
+    return `enode://${publicKeyNoPrefix}@l2-sequencer-${index}:30303`
   }
 
   private generateKeyPair(): KeyPair {
@@ -78,45 +92,97 @@ export default class SetupGenKeystore extends Command {
   }
 
   private async updateConfigToml(
-    signerAddress: string,
-    keystoreJson: string,
-    password: string,
+    sequencerData: SequencerData[],
+    bootnodeData: BootnodeData[],
     accounts: Record<string, KeyPair>,
-    coordinatorJwtSecretKey?: string
+    coordinatorJwtSecretKey?: string,
+    overwriteSequencers: boolean = false,
+    overwriteBootnodes: boolean = false
   ): Promise<void> {
     const configPath = path.join(process.cwd(), 'config.toml')
     const existingConfig = await this.getExistingConfig()
 
-    if (!existingConfig.accounts) existingConfig.accounts = {}
-    if (!existingConfig.sequencer) existingConfig.sequencer = {}
+    // Create a new object to store the updated config
+    let updatedConfig: Record<string, any> = {}
 
-    // Add L2GETH values to sequencer section
-    if (signerAddress) existingConfig.sequencer.L2GETH_SIGNER_ADDRESS = signerAddress
-    if (keystoreJson) existingConfig.sequencer.L2GETH_KEYSTORE = keystoreJson
-    if (password) existingConfig.sequencer.L2GETH_PASSWORD = password
-    if (!existingConfig.sequencer.L2GETH_NODEKEY) {
-      existingConfig.sequencer.L2GETH_NODEKEY = Wallet.createRandom().privateKey.slice(2) // Remove '0x' prefix
-    }
+    // Helper function to add or update a section
+    const addOrUpdateSection = (key: string, value: any) => {
+      if (key === 'sequencer') {
+        updatedConfig[key] = value || {}
+        const enodeUrls = sequencerData.map((data, index) => this.getEnodeUrl(data.nodekey, index))
+        updatedConfig[key].L2_GETH_STATIC_PEERS = enodeUrls
 
-    // Add other accounts
-    for (const [key, value] of Object.entries(accounts)) {
-      if (key === 'OWNER') {
-        // Only set the address for OWNER, remove the private key if it exists
-        existingConfig.accounts.OWNER_ADDR = value.address
-        delete existingConfig.accounts.OWNER_PRIVATE_KEY
+        // If overwriting, remove all existing sequencer subsections
+        if (overwriteSequencers) {
+          Object.keys(updatedConfig[key]).forEach(subKey => {
+            if (subKey.startsWith('sequencer-')) {
+              delete updatedConfig[key][subKey]
+            }
+          })
+        }
+
+        // Add sequencer subsections
+        sequencerData.forEach((data, index) => {
+          const subKey = `sequencer-${index}`
+          updatedConfig[key][subKey] = {
+            L2GETH_SIGNER_ADDRESS: data.address,
+            L2GETH_KEYSTORE: data.keystoreJson,
+            L2GETH_PASSWORD: data.password,
+            L2GETH_NODEKEY: data.nodekey,
+          }
+        })
+      } else if (key === 'bootnode') {
+        updatedConfig[key] = value || {}
+
+        // If overwriting, remove all existing bootnode subsections
+        if (overwriteBootnodes) {
+          Object.keys(updatedConfig[key]).forEach(subKey => {
+            if (subKey.startsWith('bootnode-')) {
+              delete updatedConfig[key][subKey]
+            }
+          })
+        }
+
+        // Add bootnode subsections
+        bootnodeData.forEach((data, index) => {
+          const subKey = `bootnode-${index}`
+          updatedConfig[key][subKey] = {
+            L2GETH_NODEKEY: data.nodekey,
+          }
+        })
+      } else if (key === 'accounts') {
+        updatedConfig[key] = value || {}
+        for (const [accountKey, accountValue] of Object.entries(accounts)) {
+          if (accountKey === 'OWNER') {
+            updatedConfig[key].OWNER_ADDR = accountValue.address
+            delete updatedConfig[key].OWNER_PRIVATE_KEY
+          } else {
+            updatedConfig[key][`${accountKey}_PRIVATE_KEY`] = accountValue.privateKey
+            updatedConfig[key][`${accountKey}_ADDR`] = accountValue.address
+          }
+        }
+      } else if (key === 'coordinator') {
+        updatedConfig[key] = value || {}
+        if (coordinatorJwtSecretKey) {
+          updatedConfig[key].COORDINATOR_JWT_SECRET_KEY = coordinatorJwtSecretKey
+        }
       } else {
-        existingConfig.accounts[`${key}_PRIVATE_KEY`] = value.privateKey
-        existingConfig.accounts[`${key}_ADDR`] = value.address
+        updatedConfig[key] = value
       }
     }
 
-    // Add COORDINATOR_JWT_SECRET_KEY if generated
-    if (coordinatorJwtSecretKey) {
-      if (!existingConfig.coordinator) existingConfig.coordinator = {}
-      existingConfig.coordinator.COORDINATOR_JWT_SECRET_KEY = coordinatorJwtSecretKey
+    // Iterate through existing config to maintain order
+    for (const [key, value] of Object.entries(existingConfig)) {
+      addOrUpdateSection(key, value)
     }
 
-    fs.writeFileSync(configPath, toml.stringify(existingConfig))
+    // Add new sections if they didn't exist in the original config
+    if (!updatedConfig.sequencer) addOrUpdateSection('sequencer', null)
+    if (!updatedConfig.bootnode) addOrUpdateSection('bootnode', null)
+    if (!updatedConfig.accounts) addOrUpdateSection('accounts', null)
+    if (coordinatorJwtSecretKey && !updatedConfig.coordinator) addOrUpdateSection('coordinator', null)
+
+    fs.writeFileSync(configPath, toml.stringify(updatedConfig))
     this.log(chalk.green('config.toml updated successfully'))
   }
 
@@ -143,14 +209,199 @@ export default class SetupGenKeystore extends Command {
     return undefined
   }
 
+  private async generateBootnodeNodekey(): Promise<string> {
+    return Wallet.createRandom().privateKey.slice(2) // Remove '0x' prefix
+  }
+
   public async run(): Promise<void> {
     const { flags } = await this.parse(SetupGenKeystore)
     const existingConfig = await this.getExistingConfig()
 
-    this.log(chalk.blue('Setting up L2 Geth keystore and account keys...'))
+    this.log(chalk.blue('Setting up Sequencer keystores, bootnode nodekeys, L2 account keypairs, and coordinator JWT secret key...'))
 
-    let keystoreData = { address: '', keystoreJson: '', password: '' }
-    keystoreData = await this.generateKeystore(existingConfig.sequencer?.L2GETH_SIGNER_ADDRESS)
+    // Handle sequencer keystores
+    const changeSequencerKeys = await confirm({
+      message: 'Do you want to change your sequencer keys?',
+      default: false,
+    })
+
+    let sequencerData: SequencerData[] = []
+    let overwrite = false;
+
+    if (changeSequencerKeys) {
+      const existingSequencers = existingConfig.sequencer
+        ? Object.keys(existingConfig.sequencer)
+          .filter(key => key.startsWith('sequencer-'))
+          .filter(key => {
+            const section = existingConfig.sequencer[key];
+            return section && Object.values(section).some(value => value !== '');
+          })
+          .length
+        : 0;
+
+      const backupCount = await textInput({
+        message: `How many backup sequencers do you want to run? (Current: ${Math.max(0, existingSequencers - 1)}, suggested: 1)`,
+        default: '1',
+      })
+      const totalSequencers = parseInt(backupCount) + 1
+
+      if (existingSequencers > 0) {
+        const action = await textInput({
+          message: 'Do you want to (a)dd additional keystores or (o)verwrite existing ones?',
+          default: 'a',
+        })
+
+        if (action.toLowerCase() === 'a') {
+          // Add additional keystores
+          if (totalSequencers <= existingSequencers) {
+            this.log(chalk.yellow(`You already have ${existingSequencers} sequencer(s). No new sequencers will be added.`))
+            // Keep existing sequencer data
+            for (let i = 0; i < existingSequencers; i++) {
+              const sectionName = `sequencer-${i}`
+              if (existingConfig.sequencer[sectionName] && Object.values(existingConfig.sequencer[sectionName]).some(value => value !== '')) {
+                sequencerData.push({
+                  address: existingConfig.sequencer[sectionName].L2GETH_SIGNER_ADDRESS,
+                  keystoreJson: existingConfig.sequencer[sectionName].L2GETH_KEYSTORE,
+                  password: existingConfig.sequencer[sectionName].L2GETH_PASSWORD,
+                  nodekey: existingConfig.sequencer[sectionName].L2GETH_NODEKEY,
+                })
+              }
+            }
+          } else {
+            // Keep existing sequencer data
+            for (let i = 0; i < existingSequencers; i++) {
+              const sectionName = `sequencer-${i}`
+              if (existingConfig.sequencer[sectionName] && Object.values(existingConfig.sequencer[sectionName]).some(value => value !== '')) {
+                sequencerData.push({
+                  address: existingConfig.sequencer[sectionName].L2GETH_SIGNER_ADDRESS,
+                  keystoreJson: existingConfig.sequencer[sectionName].L2GETH_KEYSTORE,
+                  password: existingConfig.sequencer[sectionName].L2GETH_PASSWORD,
+                  nodekey: existingConfig.sequencer[sectionName].L2GETH_NODEKEY,
+                })
+              }
+            }
+            // Add new sequencers
+            for (let i = existingSequencers; i < totalSequencers; i++) {
+              sequencerData.push(await this.generateSequencerKeystore(i))
+            }
+          }
+        } else if (action.toLowerCase() === 'o') {
+          overwrite = true;
+          // Overwrite existing keystores
+          for (let i = 0; i < totalSequencers; i++) {
+            sequencerData.push(await this.generateSequencerKeystore(i))
+          }
+        } else {
+          this.error(chalk.red('Invalid option. Please run the command again and choose either (a)dd or (o)verwrite.'))
+        }
+      } else {
+        // Generate new keystores
+        for (let i = 0; i < totalSequencers; i++) {
+          sequencerData.push(await this.generateSequencerKeystore(i))
+        }
+      }
+    } else {
+      // Keep existing sequencer data
+      if (existingConfig.sequencer) {
+        Object.keys(existingConfig.sequencer).forEach(key => {
+          if (key.startsWith('sequencer-') && Object.values(existingConfig.sequencer[key]).some(value => value !== '')) {
+            sequencerData.push({
+              address: existingConfig.sequencer[key].L2GETH_SIGNER_ADDRESS,
+              keystoreJson: existingConfig.sequencer[key].L2GETH_KEYSTORE,
+              password: existingConfig.sequencer[key].L2GETH_PASSWORD,
+              nodekey: existingConfig.sequencer[key].L2GETH_NODEKEY,
+            })
+          }
+        })
+      }
+    }
+
+    let bootnodeData: BootnodeData[] = []
+    let overwriteBootnodes = false
+
+    const changeBootnodeKeys = await confirm({
+      message: 'Do you want to change your bootnode keys?',
+      default: false,
+    })
+
+    if (changeBootnodeKeys) {
+      const existingBootnodes = existingConfig.bootnode
+        ? Object.keys(existingConfig.bootnode)
+          .filter(key => key.startsWith('bootnode-'))
+          .filter(key => {
+            const section = existingConfig.bootnode[key];
+            return section && section.L2GETH_NODEKEY !== '';
+          })
+          .length
+        : 0;
+
+      const bootnodeCount = await textInput({
+        message: `How many bootnodes do you want to run? (Current: ${existingBootnodes}, suggested: 2)`,
+        default: '2',
+      })
+      const totalBootnodes = parseInt(bootnodeCount)
+
+      if (existingBootnodes > 0) {
+        const action = await textInput({
+          message: 'Do you want to (a)dd additional bootnode keys or (o)verwrite existing ones?',
+          default: 'a',
+        })
+
+        if (action.toLowerCase() === 'a') {
+          // Add additional bootnode keys
+          if (totalBootnodes <= existingBootnodes) {
+            this.log(chalk.yellow(`You already have ${existingBootnodes} bootnode(s). No new bootnodes will be added.`))
+            // Keep existing bootnode data
+            for (let i = 0; i < existingBootnodes; i++) {
+              const sectionName = `bootnode-${i}`
+              if (existingConfig.bootnode[sectionName] && existingConfig.bootnode[sectionName].L2GETH_NODEKEY) {
+                bootnodeData.push({
+                  nodekey: existingConfig.bootnode[sectionName].L2GETH_NODEKEY,
+                })
+              }
+            }
+          } else {
+            // Keep existing bootnode data
+            for (let i = 0; i < existingBootnodes; i++) {
+              const sectionName = `bootnode-${i}`
+              if (existingConfig.bootnode[sectionName] && existingConfig.bootnode[sectionName].L2GETH_NODEKEY) {
+                bootnodeData.push({
+                  nodekey: existingConfig.bootnode[sectionName].L2GETH_NODEKEY,
+                })
+              }
+            }
+            // Add new bootnode keys
+            for (let i = existingBootnodes; i < totalBootnodes; i++) {
+              bootnodeData.push({ nodekey: await this.generateBootnodeNodekey() })
+            }
+          }
+        } else if (action.toLowerCase() === 'o') {
+          overwriteBootnodes = true;
+          // Overwrite existing bootnode keys
+          for (let i = 0; i < totalBootnodes; i++) {
+            bootnodeData.push({ nodekey: await this.generateBootnodeNodekey() })
+          }
+        } else {
+          this.error(chalk.red('Invalid option. Please run the command again and choose either (a)dd or (o)verwrite.'))
+        }
+      } else {
+        // Generate new bootnode keys
+        for (let i = 0; i < totalBootnodes; i++) {
+          bootnodeData.push({ nodekey: await this.generateBootnodeNodekey() })
+        }
+      }
+    } else {
+      // Keep existing bootnode data
+      if (existingConfig.bootnode) {
+        Object.keys(existingConfig.bootnode).forEach(key => {
+          if (key.startsWith('bootnode-') && existingConfig.bootnode[key].L2GETH_NODEKEY) {
+            bootnodeData.push({
+              nodekey: existingConfig.bootnode[key].L2GETH_NODEKEY,
+            })
+          }
+        })
+      }
+    }
 
     let accounts: Record<string, KeyPair> = {}
     if (flags.accounts) {
@@ -196,11 +447,6 @@ export default class SetupGenKeystore extends Command {
       }
     }
 
-    if (keystoreData.address) {
-      this.log(chalk.green(`\nL2GETH_SIGNER_ADDRESS: ${keystoreData.address}`))
-      this.log(chalk.green('L2GETH_KEYSTORE: [Encrypted JSON keystore]'))
-    }
-
     let coordinatorJwtSecretKey: string | undefined
 
     const generateJwtSecret = await confirm({
@@ -216,15 +462,16 @@ export default class SetupGenKeystore extends Command {
 
     if (updateConfig) {
       await this.updateConfigToml(
-        keystoreData.address,
-        keystoreData.keystoreJson,
-        keystoreData.password,
+        sequencerData,
+        bootnodeData,
         accounts,
-        coordinatorJwtSecretKey
+        coordinatorJwtSecretKey,
+        overwrite,
+        overwriteBootnodes
       )
       this.log(chalk.green('config.toml updated successfully'))
     }
 
-    this.log(chalk.blue('Keystore and account key generation completed.'))
+    this.log(chalk.blue('Keystore, bootnode, and account key generation completed.'))
   }
 }
