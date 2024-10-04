@@ -6,13 +6,15 @@ import * as toml from '@iarna/toml'
 import chalk from 'chalk'
 import { confirm, input, select } from '@inquirer/prompts'
 import { ethers } from 'ethers'
+import * as yaml from 'js-yaml';
+import * as childProcess from 'child_process';
 
 export default class SetupConfigs extends Command {
   static override description = 'Generate configuration files and create environment files for services'
 
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
-    '<%= config.bin %> <%= command.id %> --image-tag v0.0.24',
+    '<%= config.bin %> <%= command.id %> --image-tag v0.0.25',
   ]
 
   static override flags = {
@@ -123,6 +125,7 @@ export default class SetupConfigs extends Command {
   // TODO: check privatekey secrets once integrated
   private generateEnvContent(service: string, config: any): string {
     const mapping: Record<string, string[]> = {
+      'admin-system-backend': ['ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMIN_AUTH_DB_CONFIG', 'ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMIN_DB_CONFIG_DSN', 'ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMION_READ_ONLY_DB_CONFIG_DSN'],
       'blockscout': ['BLOCKSCOUT_DB_CONNECTION_STRING:DATABASE_URL'],
       'bridge-history-api': ['BRIDGE_HISTORY_DB_CONNECTION_STRING:SCROLL_BRIDGE_HISTORY_DB_DSN'],
       'bridge-history-fetcher': ['BRIDGE_HISTORY_DB_CONNECTION_STRING:SCROLL_BRIDGE_HISTORY_DB_DSN'],
@@ -185,29 +188,29 @@ export default class SetupConfigs extends Command {
     }
   }
 
-  private copyContractsConfigs(): void {
-    const sourceDir = process.cwd()
-    const targetDir = path.join(sourceDir, 'contracts', 'configs')
+  // private copyContractsConfigs(): void {
+  //   const sourceDir = process.cwd()
+  //   const targetDir = path.join(sourceDir, 'contracts', 'configs')
 
-    // Ensure the target directory exists
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true })
-    }
+  //   // Ensure the target directory exists
+  //   if (!fs.existsSync(targetDir)) {
+  //     fs.mkdirSync(targetDir, { recursive: true })
+  //   }
 
-    const filesToCopy = ['config.toml', 'config-contracts.toml']
+  //   const filesToCopy = ['config.toml', 'config-contracts.toml']
 
-    for (const file of filesToCopy) {
-      const sourcePath = path.join(sourceDir, file)
-      const targetPath = path.join(targetDir, file)
+  //   for (const file of filesToCopy) {
+  //     const sourcePath = path.join(sourceDir, file)
+  //     const targetPath = path.join(targetDir, file)
 
-      if (fs.existsSync(sourcePath)) {
-        fs.copyFileSync(sourcePath, targetPath)
-        this.log(chalk.green(`Copied ${file} to contracts/configs/`))
-      } else {
-        this.log(chalk.yellow(`${file} not found in the current directory, skipping.`))
-      }
-    }
-  }
+  //     if (fs.existsSync(sourcePath)) {
+  //       fs.copyFileSync(sourcePath, targetPath)
+  //       this.log(chalk.green(`Copied ${file} to contracts/configs/`))
+  //     } else {
+  //       this.log(chalk.yellow(`${file} not found in the current directory, skipping.`))
+  //     }
+  //   }
+  // }
 
   private async updateDeploymentSalt(): Promise<void> {
     const configPath = path.join(process.cwd(), 'config.toml')
@@ -276,7 +279,11 @@ export default class SetupConfigs extends Command {
     if (updateBlock) {
       try {
         const l1RpcUri = (config.frontend as any)?.EXTERNAL_RPC_URI_L1
-        if (l1RpcUri) {
+        const isDevnet = (config.general as any)?.L1_RPC_ENDPOINT === "http://l1-devnet:8545"
+
+        if (isDevnet) {
+          defaultNewBlock = '0'
+        } else if (l1RpcUri) {
           const provider = new ethers.JsonRpcProvider(l1RpcUri)
           const latestBlock = await provider.getBlockNumber()
           defaultNewBlock = latestBlock.toString()
@@ -286,7 +293,6 @@ export default class SetupConfigs extends Command {
         }
       } catch (error) {
         this.log(chalk.yellow(`Failed to retrieve current L1 block height: ${error}`))
-        this.log(chalk.yellow('Using current value as default.'))
       }
 
       if (!defaultNewBlock || isNaN(Number(defaultNewBlock))) {
@@ -310,68 +316,68 @@ export default class SetupConfigs extends Command {
     }
   }
 
-  private nodeKeyToEnodeId(nodeKey: string): string {
-    // Remove '0x' prefix if present
-    nodeKey = nodeKey.startsWith('0x') ? nodeKey.slice(2) : nodeKey;
+  // private nodeKeyToEnodeId(nodeKey: string): string {
+  //   // Remove '0x' prefix if present
+  //   nodeKey = nodeKey.startsWith('0x') ? nodeKey.slice(2) : nodeKey;
 
-    // Create a Wallet instance from the private key
-    const wallet = new ethers.Wallet(nodeKey);
+  //   // Create a Wallet instance from the private key
+  //   const wallet = new ethers.Wallet(nodeKey);
 
-    // Get the public key
-    const publicKey = wallet.signingKey.publicKey;
+  //   // Get the public key
+  //   const publicKey = wallet.signingKey.publicKey;
 
-    // Remove '0x04' prefix from public key
-    const publicKeyNoPrefix = publicKey.slice(4);
+  //   // Remove '0x04' prefix from public key
+  //   const publicKeyNoPrefix = publicKey.slice(4);
 
-    // The enode ID is the uncompressed public key without the '04' prefix
-    return publicKeyNoPrefix;
-  }
+  //   // The enode ID is the uncompressed public key without the '04' prefix
+  //   return publicKeyNoPrefix;
+  // }
 
-  private async updateSequencerEnode(): Promise<void> {
-    const configPath = path.join(process.cwd(), 'config.toml')
-    if (!fs.existsSync(configPath)) {
-      this.log(chalk.yellow('config.toml not found. Skipping sequencer enode update.'))
-      return
-    }
+  // private async updateSequencerEnode(): Promise<void> {
+  //   const configPath = path.join(process.cwd(), 'config.toml')
+  //   if (!fs.existsSync(configPath)) {
+  //     this.log(chalk.yellow('config.toml not found. Skipping sequencer enode update.'))
+  //     return
+  //   }
 
-    const configContent = fs.readFileSync(configPath, 'utf-8')
-    const config = toml.parse(configContent)
+  //   const configContent = fs.readFileSync(configPath, 'utf-8')
+  //   const config = toml.parse(configContent)
 
-    const nodeKey = (config.sequencer as any)?.L2GETH_NODEKEY
-    if (!nodeKey) {
-      this.log(chalk.yellow('L2GETH_NODEKEY not found in [sequencer] section. Skipping sequencer enode update.'))
-      return
-    }
+  //   const nodeKey = (config.sequencer as any)?.L2GETH_NODEKEY
+  //   if (!nodeKey) {
+  //     this.log(chalk.yellow('L2GETH_NODEKEY not found in [sequencer] section. Skipping sequencer enode update.'))
+  //     return
+  //   }
 
-    const updateEnode = await confirm({
-      message: 'Would you like to update the L2_GETH_STATIC_PEERS in config.toml using the L2GETH_NODEKEY?'
-    })
+  // const updateEnode = await confirm({
+  //   message: 'Would you like to update the L2_GETH_STATIC_PEERS in config.toml using the L2GETH_NODEKEY?'
+  // })
 
-    if (updateEnode) {
-      const enodeId = this.nodeKeyToEnodeId(nodeKey)
-      const host = await input({
-        message: 'Enter the host for the enode:',
-        default: 'l2-sequencer-1'
-      })
-      const port = await input({
-        message: 'Enter the port for the enode:',
-        default: '30303'
-      })
+  // if (updateEnode) {
+  //   const enodeId = this.nodeKeyToEnodeId(nodeKey)
+  //   const host = await input({
+  //     message: 'Enter the host for the enode:',
+  //     default: 'l2-sequencer-1'
+  //   })
+  //   const port = await input({
+  //     message: 'Enter the port for the enode:',
+  //     default: '30303'
+  //   })
 
-      const enode = `enode://${enodeId}@${host}:${port}`
-      const enodeList = `["${enode}"]`
+  //   const enode = `enode://${enodeId}@${host}:${port}`
+  //   const enodeList = `["${enode}"]`
 
-      if (!config.sequencer) {
-        config.sequencer = {}
-      }
-      (config.sequencer as any).L2_GETH_STATIC_PEERS = enodeList
+  //   if (!config.sequencer) {
+  //     config.sequencer = {}
+  //   }
+  //   (config.sequencer as any).L2_GETH_STATIC_PEERS = enodeList
 
-      fs.writeFileSync(configPath, toml.stringify(config as any))
-      this.log(chalk.green(`L2_GETH_STATIC_PEERS updated in config.toml: ${enodeList}`))
-    } else {
-      this.log(chalk.yellow('L2_GETH_STATIC_PEERS not updated'))
-    }
-  }
+  //   fs.writeFileSync(configPath, toml.stringify(config as any))
+  //   this.log(chalk.green(`L2_GETH_STATIC_PEERS updated in config.toml: ${enodeList}`))
+  // } else {
+  //   this.log(chalk.yellow('L2_GETH_STATIC_PEERS not updated'))
+  // }
+  // }
 
   private async fetchDockerTags(): Promise<string[]> {
     try {
@@ -389,7 +395,7 @@ export default class SetupConfigs extends Command {
   }
 
   private async getDockerImageTag(providedTag: string | undefined): Promise<string> {
-    const defaultTag = 'gen-configs-v0.0.24';
+    const defaultTag = 'gen-configs-v0.0.25';
 
     if (!providedTag) {
       return defaultTag;
@@ -413,6 +419,229 @@ export default class SetupConfigs extends Command {
     return selectedTag;
   }
 
+  private async processYamlFiles(): Promise<void> {
+    const sourceDir = process.cwd();
+    const targetDir = path.join(sourceDir, 'values');
+
+    // Ensure the target directory exists
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    // Check permissions and potentially change ownership before processing
+    const yamlFiles = fs.readdirSync(sourceDir).filter(file => file.endsWith('.yaml'));
+    if (yamlFiles.some(file => !this.canAccessFile(path.join(sourceDir, file)))) {
+      const changeOwnership = await confirm({
+        message: 'Some YAML files have permission issues. Would you like to change their ownership to the current user?'
+      });
+
+      if (changeOwnership) {
+        try {
+          const command = `sudo find ${sourceDir} -name "*.yaml" -user root -exec sudo chown -R $USER: {} \\;`;
+          childProcess.execSync(command, { stdio: 'inherit' });
+          this.log(chalk.green('File ownership changed successfully.'));
+        } catch (error) {
+          this.error(`Failed to change file ownership: ${error}`);
+          return; // Exit the method if we can't change permissions
+        }
+      } else {
+        this.log(chalk.yellow('File ownership not changed. Some files may not be accessible.'));
+        return; // Exit the method if user chooses not to change permissions
+      }
+    }
+
+    const fileMappings = [
+      { source: 'admin-system-backend-config.yaml', target: 'admin-system-backend-config.yaml', prefix: 'admin-system-backend:' },
+      { source: 'admin-system-backend-config.yaml', target: 'admin-system-cron-config.yaml', prefix: 'admin-system-cron:' },
+      { source: 'balance-checker-config.yaml', target: 'balance-checker-config.yaml', prefix: 'balance-checker:' },
+      { source: 'bridge-history-config.yaml', target: 'bridge-history-api-config.yaml', prefix: 'bridge-history-api:' },
+      { source: 'bridge-history-config.yaml', target: 'bridge-history-fetcher-config.yaml', prefix: 'bridge-history-fetcher:' },
+      { source: 'chain-monitor-config.yaml', target: 'chain-monitor-config.yaml', prefix: 'chain-monitor:' },
+      { source: 'coordinator-config.yaml', target: 'coordinator-api-config.yaml', prefix: 'coordinator-api:' },
+      { source: 'coordinator-config.yaml', target: 'coordinator-cron-config.yaml', prefix: 'coordinator-cron:' },
+      { source: 'frontend-config.yaml', target: 'frontends-config.yaml', prefix: 'frontends:' },
+      { source: 'genesis.yaml', target: 'genesis.yaml', prefix: 'scroll-common:' },
+      { source: 'rollup-config.yaml', target: 'gas-oracle-config.yaml', prefix: 'gas-oracle:' },
+      { source: 'rollup-config.yaml', target: 'rollup-node-config.yaml', prefix: 'rollup-node:' },
+      { source: 'rollup-explorer-backend-config.yaml', target: 'rollup-explorer-backend-config.yaml', prefix: 'rollup-explorer-backend:' },
+    ];
+
+    // Read all source files first
+    const sourceFiles = new Map<string, string>();
+    for (const mapping of fileMappings) {
+      const sourcePath = path.join(sourceDir, mapping.source);
+      if (fs.existsSync(sourcePath) && !sourceFiles.has(mapping.source)) {
+        sourceFiles.set(mapping.source, fs.readFileSync(sourcePath, 'utf8'));
+      }
+    }
+
+    // Process all mappings
+    for (const mapping of fileMappings) {
+      const content = sourceFiles.get(mapping.source);
+      if (content) {
+        const targetPath = path.join(targetDir, mapping.target);
+        try {
+          const indentedContent = content.split('\n').map(line => `  ${line}`).join('\n');
+          const newContent = `${mapping.prefix}\n${indentedContent}`;
+          fs.writeFileSync(targetPath, newContent);
+          this.log(chalk.green(`Processed file: ${mapping.source} -> ${mapping.target}`));
+        } catch (error: unknown) {
+          if (error instanceof Error) {
+            this.log(chalk.red(`Error processing file ${mapping.source}: ${error.message}`));
+          } else {
+            this.log(chalk.red(`Unknown error processing file ${mapping.source}`));
+          }
+        }
+      } else {
+        this.log(chalk.yellow(`Source file not found: ${mapping.source}`));
+      }
+    }
+
+    // Remove source files after all processing is complete
+    for (const sourceFile of sourceFiles.keys()) {
+      const sourcePath = path.join(sourceDir, sourceFile);
+      try {
+        fs.unlinkSync(sourcePath);
+        this.log(chalk.green(`Removed source file: ${sourceFile}`));
+      } catch (error: unknown) {
+        if (error instanceof Error) {
+          this.log(chalk.red(`Error removing file ${sourceFile}: ${error.message}`));
+        } else {
+          this.log(chalk.red(`Unknown error removing file ${sourceFile}`));
+        }
+      }
+    }
+
+    // Process config.toml and config-contracts.toml
+    const configFiles = [
+      { source: 'config.toml', target: 'scroll-common-config.yaml', key: 'scrollConfig' },
+      { source: 'config-contracts.toml', target: 'scroll-common-config-contracts.yaml', key: 'scrollConfigContracts' },
+    ];
+
+    for (const file of configFiles) {
+      const sourcePath = path.join(sourceDir, file.source);
+      const targetPath = path.join(targetDir, file.target);
+
+      if (fs.existsSync(sourcePath)) {
+        const content = fs.readFileSync(sourcePath, 'utf8');
+        const yamlContent = {
+          contracts: {
+            [file.key]: content,
+          },
+        };
+        const yamlString = yaml.dump(yamlContent, { indent: 2 });
+        fs.writeFileSync(targetPath, yamlString);
+        this.log(chalk.green(`Processed file: ${file.target}`));
+      } else {
+        this.log(chalk.yellow(`Source file not found: ${file.source}`));
+      }
+    }
+  }
+
+  private canAccessFile(filePath: string): boolean {
+    try {
+      fs.accessSync(filePath, fs.constants.R_OK | fs.constants.W_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async updateL1FeeVaultAddr(): Promise<void> {
+    const configPath = path.join(process.cwd(), 'config.toml');
+    if (!fs.existsSync(configPath)) {
+      this.log(chalk.yellow('config.toml not found. Skipping L1_FEE_VAULT_ADDR update.'));
+      return;
+    }
+
+    const configContent = fs.readFileSync(configPath, 'utf-8');
+    const config = toml.parse(configContent);
+
+    const updateFeeVault = await confirm({
+      message: 'Would you like to set a value for L1_FEE_VAULT_ADDR?'
+    });
+
+    if (updateFeeVault) {
+      this.log(chalk.yellow('It is recommended to use a Safe for the L1_FEE_VAULT_ADDR.'));
+      const defaultAddr = (config.accounts as any)?.OWNER_ADDR || '';
+      this.log(chalk.cyan(`The Owner address (${defaultAddr}) is the default value.`));
+
+      let isValidAddress = false;
+      let newAddr = '';
+
+      while (!isValidAddress) {
+        newAddr = await input({
+          message: 'Enter the L1_FEE_VAULT_ADDR:',
+          default: defaultAddr
+        });
+
+        if (ethers.isAddress(newAddr)) {
+          isValidAddress = true;
+        } else {
+          this.log(chalk.red('Invalid Ethereum address. Please try again.'));
+        }
+      }
+
+      if (!config.contracts) {
+        config.contracts = {};
+      }
+      (config.contracts as any).L1_FEE_VAULT_ADDR = newAddr;
+
+      fs.writeFileSync(configPath, toml.stringify(config as any));
+      this.log(chalk.green(`L1_FEE_VAULT_ADDR updated in config.toml to "${newAddr}"`));
+    } else {
+      this.log(chalk.yellow('L1_FEE_VAULT_ADDR not updated'));
+    }
+  }
+
+  private async updateL1PlonkVerifierAddr(): Promise<void> {
+    const configPath = path.join(process.cwd(), 'config.toml');
+    if (!fs.existsSync(configPath)) {
+      this.log(chalk.yellow('config.toml not found. Skipping L1_PLONK_VERIFIER_ADDR update.'));
+      return;
+    }
+
+    const configContent = fs.readFileSync(configPath, 'utf-8');
+    const config = toml.parse(configContent);
+
+    this.log(chalk.yellow('Note: Setting L1_PLONK_VERIFIER_ADDR is not needed for testnets without a prover.'));
+
+    const updatePlonkVerifier = await confirm({
+      message: 'Would you like to set a value for L1_PLONK_VERIFIER_ADDR?'
+    });
+
+    if (updatePlonkVerifier) {
+      const currentAddr = (config.contracts as any)?.L1_PLONK_VERIFIER_ADDR || '';
+      this.log(chalk.cyan(`The current L1_PLONK_VERIFIER_ADDR is: ${currentAddr}`));
+
+      let isValidAddress = false;
+      let newAddr = '';
+
+      while (!isValidAddress) {
+        newAddr = await input({
+          message: 'Enter the L1_PLONK_VERIFIER_ADDR:',
+          default: currentAddr
+        });
+
+        if (ethers.isAddress(newAddr)) {
+          isValidAddress = true;
+        } else {
+          this.log(chalk.red('Invalid Ethereum address. Please try again.'));
+        }
+      }
+
+      if (!config.contracts) {
+        config.contracts = {};
+      }
+      (config.contracts as any).L1_PLONK_VERIFIER_ADDR = newAddr;
+
+      fs.writeFileSync(configPath, toml.stringify(config as any));
+      this.log(chalk.green(`L1_PLONK_VERIFIER_ADDR updated in config.toml to "${newAddr}"`));
+    } else {
+      this.log(chalk.yellow('L1_PLONK_VERIFIER_ADDR not updated'));
+    }
+  }
+
   public async run(): Promise<void> {
     const { flags } = await this.parse(SetupConfigs)
 
@@ -425,8 +654,14 @@ export default class SetupConfigs extends Command {
     this.log(chalk.blue('Checking deployment salt...'))
     await this.updateDeploymentSalt()
 
-    this.log(chalk.blue('Checking sequencer enode...'))
-    await this.updateSequencerEnode()
+    this.log(chalk.blue('Checking L1_FEE_VAULT_ADDR...'))
+    await this.updateL1FeeVaultAddr()
+
+    this.log(chalk.blue('Checking L1_PLONK_VERIFIER_ADDR...'))
+    await this.updateL1PlonkVerifierAddr()
+
+    // this.log(chalk.blue('Checking sequencer enode...'))
+    // await this.updateSequencerEnode()
 
     this.log(chalk.blue('Running docker command to generate configs...'))
     await this.runDockerCommand(imageTag)
@@ -434,11 +669,14 @@ export default class SetupConfigs extends Command {
     this.log(chalk.blue('Creating secrets folder...'))
     this.createSecretsFolder()
 
-    this.log(chalk.blue('Copying contract configs...'))
-    this.copyContractsConfigs()
+    // this.log(chalk.blue('Copying contract configs...'))
+    // this.copyContractsConfigs()
 
     this.log(chalk.blue('Creating secrets environment files...'))
     await this.createEnvFiles()
+
+    this.log(chalk.blue('Processing YAML files...'))
+    await this.processYamlFiles()
 
     this.log(chalk.green('Configuration setup completed.'))
   }
