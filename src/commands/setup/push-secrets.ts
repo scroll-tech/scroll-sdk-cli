@@ -56,11 +56,26 @@ class AWSSecretService implements SecretService {
 
     // Process ENV files
     const envFiles = fs.readdirSync(secretsDir).filter(file => file.endsWith('.env'))
+    let l2SequencerSecrets: Record<string, string> = {}
+
     for (const file of envFiles) {
-      const secretName = `${path.basename(file, '.env')}-env`
-      console.log(chalk.cyan(`Processing ENV secret: ${secretName}`))
-      const content = await this.convertToJson(path.join(secretsDir, file))
-      await this.pushToAWSSecret(content, secretName)
+      const secretName = path.basename(file, '.env')
+      if (secretName.startsWith('l2-sequencer-')) {
+        console.log(chalk.cyan(`Processing L2 Sequencer secret: ${secretName}`))
+        const content = await this.convertToJson(path.join(secretsDir, file))
+        l2SequencerSecrets = { ...l2SequencerSecrets, ...JSON.parse(content) }
+      } else {
+        console.log(chalk.cyan(`Processing ENV secret: ${secretName}`))
+        const content = await this.convertToJson(path.join(secretsDir, file))
+        await this.pushToAWSSecret(content, secretName)
+      }
+    }
+
+    // Push combined L2 Sequencer secrets
+    if (Object.keys(l2SequencerSecrets).length > 0) {
+      console.log(chalk.cyan(`Processing combined L2 Sequencer secrets: l2-sequencer-secret`))
+      const combinedContent = JSON.stringify(l2SequencerSecrets)
+      await this.pushToAWSSecret(combinedContent, 'l2-sequencer-secret')
     }
   }
 }
@@ -213,11 +228,25 @@ class HashicorpVaultDevService implements SecretService {
 
     // Process ENV files
     const envFiles = fs.readdirSync(secretsDir).filter(file => file.endsWith('.env'))
+    let l2SequencerSecrets: Record<string, string> = {}
+
     for (const file of envFiles) {
-      const secretName = `${path.basename(file, '.env')}-env`
-      console.log(chalk.cyan(`Processing ENV secret: scroll/${secretName}`))
-      const data = await this.convertEnvToDict(path.join(secretsDir, file))
-      await this.pushToVault(secretName, data)
+      const secretName = path.basename(file, '.env')
+      if (secretName.startsWith('l2-sequencer-')) {
+        console.log(chalk.cyan(`Processing L2 Sequencer secret: ${secretName}`))
+        const data = await this.convertEnvToDict(path.join(secretsDir, file))
+        l2SequencerSecrets = { ...l2SequencerSecrets, ...data }
+      } else {
+        console.log(chalk.cyan(`Processing ENV secret: scroll/${secretName}`))
+        const data = await this.convertEnvToDict(path.join(secretsDir, file))
+        await this.pushToVault(secretName, data)
+      }
+    }
+
+    // Push combined L2 Sequencer secrets
+    if (Object.keys(l2SequencerSecrets).length > 0) {
+      console.log(chalk.cyan(`Processing combined L2 Sequencer secrets: scroll/l2-sequencer-secret`))
+      await this.pushToVault('l2-sequencer-secret', l2SequencerSecrets)
     }
 
     console.log(chalk.green("All secrets have been processed and populated in Vault."))
@@ -230,6 +259,7 @@ export default class SetupPushSecrets extends Command {
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
     '<%= config.bin %> <%= command.id %> --debug',
+    '<%= config.bin %> <%= command.id %> --values-dir custom-values',
   ]
 
   static override flags = {
@@ -238,7 +268,13 @@ export default class SetupPushSecrets extends Command {
       description: 'Show debug output',
       default: false,
     }),
+    'values-dir': Flags.string({
+      description: 'Directory containing the values files',
+      default: 'values',
+    }),
   }
+
+  private flags: any;
 
   private async getVaultCredentials(): Promise<Record<string, string>> {
     return {
@@ -282,75 +318,74 @@ export default class SetupPushSecrets extends Command {
   }
 
   private async updateProductionYaml(provider: string): Promise<void> {
-    const charts = [
-      'balance-checker', 'blockscout', 'blockscout-sc-verifier', 'bridge-history-api',
-      'bridge-history-fetcher', 'chain-monitor', 'contracts', 'coordinator-api',
-      'coordinator-cron', 'external-secrets-lib', 'frontends', 'gas-oracle', 'l2-bootnode', 'l2-rpc', 'l2-sequencer',
-      'rollup-explorer-backend', 'rollup-node', 'scroll-common', 'scroll-sdk'
-    ]
-
-    let credentials: Record<string, string>
-    if (provider === 'vault') {
-      credentials = await this.getVaultCredentials()
-    } else {
-      credentials = await this.getAWSCredentials()
+    const valuesDir = path.join(process.cwd(), this.flags['values-dir']);
+    if (!fs.existsSync(valuesDir)) {
+      this.error(chalk.red(`Values directory not found at ${valuesDir}`));
+      return;
     }
 
-    for (const chart of charts) {
-      let yamlPath: string
-      if (chart === 'l2-bootnode' || chart === 'l2-sequencer') {
-        yamlPath = path.join(process.cwd(), chart, 'values', 'production-1.yaml')
-        if (!fs.existsSync(yamlPath)) {
-          this.log(chalk.yellow(`production-1.yaml not found for ${chart}`))
-          continue
-        }
-        this.log(chalk.cyan(`Using production-1.yaml for ${chart}`))
-      } else {
-        yamlPath = path.join(process.cwd(), chart, 'values', 'production.yaml')
-        if (!fs.existsSync(yamlPath)) {
-          this.log(chalk.yellow(`production.yaml not found for ${chart}`))
-          continue
-        }
-        this.log(chalk.cyan(`Using production.yaml for ${chart}`))
-      }
+    let credentials: Record<string, string>;
+    if (provider === 'vault') {
+      credentials = await this.getVaultCredentials();
+    } else {
+      credentials = await this.getAWSCredentials();
+    }
 
-      const content = fs.readFileSync(yamlPath, 'utf8')
-      const yamlContent = yaml.load(content) as any
+    const yamlFiles = fs.readdirSync(valuesDir).filter(file =>
+      file.endsWith('-production.yaml') || file.match(/-production-\d+\.yaml$/)
+    );
 
-      let updated = false
+    for (const yamlFile of yamlFiles) {
+      const yamlPath = path.join(valuesDir, yamlFile);
+      this.log(chalk.cyan(`Processing ${yamlFile}`));
+
+      const content = fs.readFileSync(yamlPath, 'utf8');
+      const yamlContent = yaml.load(content) as any;
+
+      let updated = false;
       if (yamlContent.externalSecrets) {
         for (const [secretName, secret] of Object.entries(yamlContent.externalSecrets) as [string, any][]) {
           if (secret.provider !== provider) {
-            secret.provider = provider
-            updated = true
+            secret.provider = provider;
+            updated = true;
           }
 
           if (provider === 'vault') {
-            secret.server = credentials.server
-            secret.path = credentials.path
-            secret.version = credentials.version
-            secret.tokenSecretName = credentials.tokenSecretName
-            secret.tokenSecretKey = credentials.tokenSecretKey
-            delete secret.serviceAccount
-            delete secret.secretRegion
-            updated = true
+            secret.server = credentials.server;
+            secret.path = credentials.path;
+            secret.version = credentials.version;
+            secret.tokenSecretName = credentials.tokenSecretName;
+            secret.tokenSecretKey = credentials.tokenSecretKey;
+            delete secret.serviceAccount;
+            delete secret.secretRegion;
+            updated = true;
           } else {
-            secret.serviceAccount = credentials.serviceAccount
-            secret.secretRegion = credentials.secretRegion
-            delete secret.server
-            delete secret.path
-            delete secret.version
-            delete secret.tokenSecretName
-            delete secret.tokenSecretKey
-            updated = true
+            secret.serviceAccount = credentials.serviceAccount;
+            secret.secretRegion = credentials.secretRegion;
+            delete secret.server;
+            delete secret.path;
+            delete secret.version;
+            delete secret.tokenSecretName;
+            delete secret.tokenSecretKey;
+            updated = true;
           }
 
           // Update remoteRef for migrate-db secrets
           if (secretName.endsWith('-migrate-db')) {
             for (const data of secret.data) {
               if (data.remoteRef && data.remoteRef.key && data.secretKey === 'migrate-db.json') {
-                data.remoteRef.property = 'migrate-db.json'
-                updated = true
+                data.remoteRef.property = 'migrate-db.json';
+                updated = true;
+              }
+            }
+          }
+
+          // Update remoteRef for l2-sequencer secrets
+          if (secretName.match(/^l2-sequencer-\d+-secret$/)) {
+            for (const data of secret.data) {
+              if (data.remoteRef && data.remoteRef.key) {
+                data.remoteRef.key = 'l2-sequencer-secret';
+                updated = true;
               }
             }
           }
@@ -358,11 +393,11 @@ export default class SetupPushSecrets extends Command {
       }
 
       if (updated) {
-        const newContent = yaml.dump(yamlContent, { lineWidth: -1, noRefs: true, quotingType: '"', forceQuotes: true })
-        fs.writeFileSync(yamlPath, newContent)
-        this.log(chalk.green(`Updated externalSecrets provider in ${chalk.cyan(chart)}/values/${path.basename(yamlPath)}`))
+        const newContent = yaml.dump(yamlContent, { lineWidth: -1, noRefs: true, quotingType: '"', forceQuotes: true });
+        fs.writeFileSync(yamlPath, newContent);
+        this.log(chalk.green(`Updated externalSecrets provider in ${chalk.cyan(yamlFile)}`));
       } else {
-        this.log(chalk.yellow(`No changes needed in ${chalk.cyan(chart)}/values/${path.basename(yamlPath)}`))
+        this.log(chalk.yellow(`No changes needed in ${chalk.cyan(yamlFile)}`));
       }
     }
   }
@@ -370,6 +405,7 @@ export default class SetupPushSecrets extends Command {
 
   public async run(): Promise<void> {
     const { flags } = await this.parse(SetupPushSecrets)
+    this.flags = flags
 
     this.log(chalk.blue('Starting secret push process...'))
 

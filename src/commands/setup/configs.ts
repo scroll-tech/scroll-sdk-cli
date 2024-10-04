@@ -112,15 +112,17 @@ export default class SetupConfigs extends Command {
     const config = toml.parse(configContent)
 
     const services = [
-      'blockscout', 'bridge-history-api', 'bridge-history-fetcher', 'chain-monitor', 'coordinator-cron', 'coordinator-api',
+      'admin-system-backend', 'blockscout', 'bridge-history-api', 'bridge-history-fetcher', 'chain-monitor', 'coordinator-api', 'coordinator-cron',
       'gas-oracle', 'l1-explorer', 'l2-sequencer', 'rollup-node'
     ]
 
     for (const service of services) {
-      const envFile = path.join(process.cwd(), 'secrets', `${service}-secret.env`)
-      const envContent = this.generateEnvContent(service, config)
-      fs.writeFileSync(envFile, envContent)
-      this.log(chalk.green(`Created ${service}-secret.env`))
+      const envFiles = this.generateEnvContent(service, config)
+      for (const [filename, content] of Object.entries(envFiles)) {
+        const envFile = path.join(process.cwd(), 'secrets', filename)
+        fs.writeFileSync(envFile, content)
+        this.log(chalk.green(`Created ${filename}`))
+      }
     }
 
     // Create additional files
@@ -128,7 +130,7 @@ export default class SetupConfigs extends Command {
   }
 
   // TODO: check privatekey secrets once integrated
-  private generateEnvContent(service: string, config: any): string {
+  private generateEnvContent(service: string, config: any): { [key: string]: string } {
     const mapping: Record<string, string[]> = {
       'admin-system-backend': ['ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMIN_AUTH_DB_CONFIG', 'ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMIN_DB_CONFIG_DSN', 'ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMION_READ_ONLY_DB_CONFIG_DSN'],
       'blockscout': ['BLOCKSCOUT_DB_CONNECTION_STRING:DATABASE_URL'],
@@ -139,24 +141,48 @@ export default class SetupConfigs extends Command {
       'coordinator-cron': ['COORDINATOR_DB_CONNECTION_STRING:SCROLL_COORDINATOR_DB_DSN', 'COORDINATOR_JWT_SECRET_KEY:SCROLL_COORDINATOR_AUTH_SECRET'],
       'gas-oracle': ['GAS_ORACLE_DB_CONNECTION_STRING:SCROLL_ROLLUP_DB_CONFIG_DSN', 'L1_GAS_ORACLE_SENDER_PRIVATE_KEY:SCROLL_ROLLUP_L1_CONFIG_RELAYER_CONFIG_GAS_ORACLE_SENDER_PRIVATE_KEY', 'L2_GAS_ORACLE_SENDER_PRIVATE_KEY:SCROLL_ROLLUP_L2_CONFIG_RELAYER_CONFIG_GAS_ORACLE_SENDER_PRIVATE_KEY'],
       'l1-explorer': ['L1_EXPLORER_DB_CONNECTION_STRING:DATABASE_URL'],
-      'l2-sequencer': ['L2GETH_KEYSTORE:L2GETH_KEYSTORE_1', 'L2GETH_PASSWORD:L2GETH_PASSWORD_1', 'L2GETH_NODEKEY:L2GETH_NODEKEY_1'],
+      'l2-sequencer': ['L2GETH_KEYSTORE:L2GETH_KEYSTORE', 'L2GETH_PASSWORD:L2GETH_PASSWORD', 'L2GETH_NODEKEY:L2GETH_NODEKEY'],
       'rollup-node': ['ROLLUP_NODE_DB_CONNECTION_STRING:SCROLL_ROLLUP_DB_CONFIG_DSN', 'L1_COMMIT_SENDER_PRIVATE_KEY:SCROLL_ROLLUP_L2_CONFIG_RELAYER_CONFIG_COMMIT_SENDER_PRIVATE_KEY', 'L1_FINALIZE_SENDER_PRIVATE_KEY:SCROLL_ROLLUP_L2_CONFIG_RELAYER_CONFIG_FINALIZE_SENDER_PRIVATE_KEY'],
     }
 
-    let content = ''
-    for (const pair of mapping[service] || []) {
-      const [configKey, envKey] = pair.split(':')
-      if (config.db && config.db[configKey]) {
-        content += `${envKey}="${config.db[configKey]}"\n`
-      } else if (config.accounts && config.accounts[configKey]) {
-        content += `${envKey}="${config.accounts[configKey]}"\n`
-      } else if (config.coordinator && config.coordinator[configKey]) {
-        content += `${envKey}="${config.coordinator[configKey]}"\n`
-      } else if (config.sequencer && config.sequencer[configKey]) {
-        content += `${envKey}="${config.sequencer[configKey]}"\n`
+    const envFiles: { [key: string]: string } = {};
+
+    if (service === 'l2-sequencer') {
+      // Handle all sequencers (primary and backups)
+      let sequencerIndex = 0;
+      while (true) {
+        const sequencerConfig = sequencerIndex === 0 ? config.sequencer : config.sequencer[`sequencer-${sequencerIndex}`];
+        if (!sequencerConfig) break;
+
+        let content = '';
+        for (const pair of mapping[service] || []) {
+          const [envKey, configKey] = pair.split(':');
+          if (sequencerConfig[configKey]) {
+            content += `${envKey}_${sequencerIndex}="${sequencerConfig[configKey]}"\n`;
+          }
+        }
+        envFiles[`l2-sequencer-${sequencerIndex}-secret.env`] = content;
+        sequencerIndex++;
       }
+    } else {
+      // Handle other services
+      let content = '';
+      for (const pair of mapping[service] || []) {
+        const [configKey, envKey] = pair.split(':');
+        if (config.db && config.db[configKey]) {
+          content += `${envKey}="${config.db[configKey]}"\n`;
+        } else if (config.accounts && config.accounts[configKey]) {
+          content += `${envKey}="${config.accounts[configKey]}"\n`;
+        } else if (config.coordinator && config.coordinator[configKey]) {
+          content += `${envKey}="${config.coordinator[configKey]}"\n`;
+        } else if (config.sequencer && config.sequencer[configKey]) {
+          content += `${envKey}="${config.sequencer[configKey]}"\n`;
+        }
+      }
+      envFiles[`${service}-secret.env`] = content;
     }
-    return content
+
+    return envFiles;
   }
 
   private createMigrateDbFiles(config: any): void {

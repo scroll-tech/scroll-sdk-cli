@@ -15,6 +15,7 @@ export default class SetupTls extends Command {
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
     '<%= config.bin %> <%= command.id %> --debug',
+    '<%= config.bin %> <%= command.id %> --values-dir custom-values',
   ]
 
   static override flags = {
@@ -23,10 +24,15 @@ export default class SetupTls extends Command {
       description: 'Show debug output and confirm before making changes',
       default: false,
     }),
+    'values-dir': Flags.string({
+      description: 'Directory containing the values files',
+      default: 'values',
+    }),
   }
 
   private selectedIssuer: string | null = null
   private debugMode: boolean = false
+  private valuesDir: string = 'values'
 
   private async checkClusterIssuer(): Promise<boolean> {
     try {
@@ -97,11 +103,10 @@ spec:
   }
 
   private async updateChartIngress(chart: string, issuer: string): Promise<void> {
-    const chartPath = path.join(process.cwd(), chart)
-    const yamlPath = path.join(chartPath, 'values', 'production.yaml')
+    const yamlPath = path.join(process.cwd(), this.valuesDir, `${chart}-production.yaml`)
 
     if (!fs.existsSync(yamlPath)) {
-      this.log(chalk.yellow(`production.yaml not found for ${chart}`))
+      this.log(chalk.yellow(`${chart}-production.yaml not found in ${this.valuesDir} directory`))
       return
     }
 
@@ -200,6 +205,7 @@ spec:
   public async run(): Promise<void> {
     const { flags } = await this.parse(SetupTls)
     this.debugMode = flags.debug
+    this.valuesDir = flags['values-dir']
 
     try {
       this.log(chalk.blue('Starting TLS configuration update...'))
@@ -238,12 +244,13 @@ spec:
       this.log(chalk.green(`Using ClusterIssuer: ${this.selectedIssuer}`))
 
       const chartsToUpdate = [
+        'admin-system-dashboard',
         'frontends',
         'blockscout',
         'coordinator-api',
         'bridge-history-api',
         'rollup-explorer-backend',
-        'l2-rpc'
+        'l2-rpc',
       ]
 
       for (const chart of chartsToUpdate) {
