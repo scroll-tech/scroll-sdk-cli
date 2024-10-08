@@ -20,7 +20,7 @@ $ npm install -g scroll-sdk-cli
 $ scrollsdk COMMAND
 running command...
 $ scrollsdk (--version)
-scroll-sdk-cli/0.0.13 linux-x64 node-v20.11.0
+scroll-sdk-cli/0.0.14 linux-x64 node-v20.11.0
 $ scrollsdk --help [COMMAND]
 USAGE
   $ scrollsdk COMMAND
@@ -84,10 +84,11 @@ Generate transactions on the specified network(s) to produce more blocks
 
 ```
 USAGE
-  $ scrollsdk helper activity [-c <value>] [-i <value>] [-o] [-t] [-p] [-k <value>] [-x <value>] [-r <value>]
+  $ scrollsdk helper activity [-c <value>] [-i <value>] [-o] [-t] [-p] [-k <value>] [-x <value>] [-r <value>] [-d]
 
 FLAGS
   -c, --config=<value>      [default: ./config.toml] Path to config.toml file
+  -d, --debug               Enable debug mode for more detailed logging
   -i, --interval=<value>    [default: 3] Interval between transactions in seconds
   -k, --privateKey=<value>  Private key (overrides config)
   -o, --layer1              Generate activity on Layer 1
@@ -100,7 +101,7 @@ DESCRIPTION
   Generate transactions on the specified network(s) to produce more blocks
 ```
 
-_See code: [src/commands/helper/activity.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/helper/activity.ts)_
+_See code: [src/commands/helper/activity.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/helper/activity.ts)_
 
 ## `scrollsdk helper clear-accounts`
 
@@ -125,7 +126,7 @@ DESCRIPTION
   Clear pending transactions and optionally transfer remaining funds on Layer 2
 ```
 
-_See code: [src/commands/helper/clear-accounts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/helper/clear-accounts.ts)_
+_See code: [src/commands/helper/clear-accounts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/helper/clear-accounts.ts)_
 
 ## `scrollsdk helper derive-enode NODEKEY`
 
@@ -145,7 +146,7 @@ EXAMPLES
   $ scrollsdk helper derive-enode 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
-_See code: [src/commands/helper/derive-enode.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/helper/derive-enode.ts)_
+_See code: [src/commands/helper/derive-enode.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/helper/derive-enode.ts)_
 
 ## `scrollsdk helper fund-accounts`
 
@@ -175,7 +176,7 @@ DESCRIPTION
   Fund L1 and L2 accounts for contracts
 ```
 
-_See code: [src/commands/helper/fund-accounts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/helper/fund-accounts.ts)_
+_See code: [src/commands/helper/fund-accounts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/helper/fund-accounts.ts)_
 
 ## `scrollsdk helper set-scalars`
 
@@ -199,7 +200,7 @@ DESCRIPTION
   Set commit and blob scalars for Scroll SDK
 ```
 
-_See code: [src/commands/helper/set-scalars.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/helper/set-scalars.ts)_
+_See code: [src/commands/helper/set-scalars.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/helper/set-scalars.ts)_
 
 ## `scrollsdk plugins`
 
@@ -496,10 +497,11 @@ Generate configuration files and create environment files for services
 
 ```
 USAGE
-  $ scrollsdk setup configs [--image-tag <value>]
+  $ scrollsdk setup configs [--image-tag <value>] [--configs-dir <value>]
 
 FLAGS
-  --image-tag=<value>  Specify the Docker image tag to use
+  --configs-dir=<value>  [default: values] Directory to store configuration files
+  --image-tag=<value>    Specify the Docker image tag to use
 
 DESCRIPTION
   Generate configuration files and create environment files for services
@@ -507,10 +509,12 @@ DESCRIPTION
 EXAMPLES
   $ scrollsdk setup configs
 
-  $ scrollsdk setup configs --image-tag v0.0.24
+  $ scrollsdk setup configs --image-tag v0.0.25
+
+  $ scrollsdk setup configs --configs-dir custom-configs
 ```
 
-_See code: [src/commands/setup/configs.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/setup/configs.ts)_
+_See code: [src/commands/setup/configs.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/setup/configs.ts)_
 
 ## `scrollsdk setup db-init`
 
@@ -541,7 +545,7 @@ EXAMPLES
   $ scrollsdk setup db-init --update-db-port=25061
 ```
 
-_See code: [src/commands/setup/db-init.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/setup/db-init.ts)_
+_See code: [src/commands/setup/db-init.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/setup/db-init.ts)_
 
 ## `scrollsdk setup domains [FILE]`
 
@@ -565,7 +569,7 @@ EXAMPLES
   $ scrollsdk setup domains
 ```
 
-_See code: [src/commands/setup/domains.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/setup/domains.ts)_
+_See code: [src/commands/setup/domains.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/setup/domains.ts)_
 
 ## `scrollsdk setup gas-token`
 
@@ -582,7 +586,7 @@ EXAMPLES
   $ scrollsdk setup gas-token
 ```
 
-_See code: [src/commands/setup/gas-token.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/setup/gas-token.ts)_
+_See code: [src/commands/setup/gas-token.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/setup/gas-token.ts)_
 
 ## `scrollsdk setup gen-keystore`
 
@@ -604,33 +608,37 @@ EXAMPLES
   $ scrollsdk setup gen-keystore --no-accounts
 ```
 
-_See code: [src/commands/setup/gen-keystore.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/setup/gen-keystore.ts)_
+_See code: [src/commands/setup/gen-keystore.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/setup/gen-keystore.ts)_
 
 ## `scrollsdk setup prep-charts`
 
-Prepare Helm charts for Scroll SDK
+Validate Makefile and prepare Helm charts for Scroll SDK
 
 ```
 USAGE
-  $ scrollsdk setup prep-charts [--github-username <value>] [--github-token <value>] [--pull]
+  $ scrollsdk setup prep-charts [--github-username <value>] [--github-token <value>] [--values-dir <value>]
+    [--skip-auth-check]
 
 FLAGS
   --github-token=<value>     GitHub Personal Access Token
   --github-username=<value>  GitHub username
-  --[no-]pull                Pull and untar charts
+  --skip-auth-check          Skip authentication check for individual charts
+  --values-dir=<value>       [default: ./values] Directory containing values files
 
 DESCRIPTION
-  Prepare Helm charts for Scroll SDK
+  Validate Makefile and prepare Helm charts for Scroll SDK
 
 EXAMPLES
   $ scrollsdk setup prep-charts
 
   $ scrollsdk setup prep-charts --github-username=your-username --github-token=your-token
 
-  $ scrollsdk setup prep-charts --no-pull
+  $ scrollsdk setup prep-charts --values-dir=./custom-values
+
+  $ scrollsdk setup prep-charts --skip-auth-check
 ```
 
-_See code: [src/commands/setup/prep-charts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/setup/prep-charts.ts)_
+_See code: [src/commands/setup/prep-charts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/setup/prep-charts.ts)_
 
 ## `scrollsdk setup push-secrets`
 
@@ -638,10 +646,11 @@ Push secrets to the selected secret service
 
 ```
 USAGE
-  $ scrollsdk setup push-secrets [-d]
+  $ scrollsdk setup push-secrets [-d] [--values-dir <value>]
 
 FLAGS
-  -d, --debug  Show debug output
+  -d, --debug               Show debug output
+      --values-dir=<value>  [default: values] Directory containing the values files
 
 DESCRIPTION
   Push secrets to the selected secret service
@@ -650,9 +659,11 @@ EXAMPLES
   $ scrollsdk setup push-secrets
 
   $ scrollsdk setup push-secrets --debug
+
+  $ scrollsdk setup push-secrets --values-dir custom-values
 ```
 
-_See code: [src/commands/setup/push-secrets.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/setup/push-secrets.ts)_
+_See code: [src/commands/setup/push-secrets.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/setup/push-secrets.ts)_
 
 ## `scrollsdk setup tls`
 
@@ -660,10 +671,11 @@ Update TLS configuration in Helm charts
 
 ```
 USAGE
-  $ scrollsdk setup tls [-d]
+  $ scrollsdk setup tls [-d] [--values-dir <value>]
 
 FLAGS
-  -d, --debug  Show debug output and confirm before making changes
+  -d, --debug               Show debug output and confirm before making changes
+      --values-dir=<value>  [default: values] Directory containing the values files
 
 DESCRIPTION
   Update TLS configuration in Helm charts
@@ -672,9 +684,11 @@ EXAMPLES
   $ scrollsdk setup tls
 
   $ scrollsdk setup tls --debug
+
+  $ scrollsdk setup tls --values-dir custom-values
 ```
 
-_See code: [src/commands/setup/tls.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/setup/tls.ts)_
+_See code: [src/commands/setup/tls.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/setup/tls.ts)_
 
 ## `scrollsdk test contracts`
 
@@ -693,7 +707,7 @@ DESCRIPTION
   Test contracts by checking deployment and initialization
 ```
 
-_See code: [src/commands/test/contracts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/test/contracts.ts)_
+_See code: [src/commands/test/contracts.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/test/contracts.ts)_
 
 ## `scrollsdk test dependencies`
 
@@ -710,7 +724,7 @@ DESCRIPTION
   Check for required dependencies
 ```
 
-_See code: [src/commands/test/dependencies.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/test/dependencies.ts)_
+_See code: [src/commands/test/dependencies.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/test/dependencies.ts)_
 
 ## `scrollsdk test e2e`
 
@@ -733,7 +747,7 @@ DESCRIPTION
   Test contracts by checking deployment and initialization
 ```
 
-_See code: [src/commands/test/e2e.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/test/e2e.ts)_
+_See code: [src/commands/test/e2e.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/test/e2e.ts)_
 
 ## `scrollsdk test ingress`
 
@@ -752,5 +766,5 @@ DESCRIPTION
   Check for required ingress hosts and validate frontend URLs
 ```
 
-_See code: [src/commands/test/ingress.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.13/src/commands/test/ingress.ts)_
+_See code: [src/commands/test/ingress.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.0.14/src/commands/test/ingress.ts)_
 <!-- commandsstop -->
