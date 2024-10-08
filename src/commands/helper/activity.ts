@@ -18,6 +18,8 @@ enum Layer {
 export default class HelperActivity extends Command {
   private providers: Record<Layer, ethers.JsonRpcProvider> = {} as Record<Layer, ethers.JsonRpcProvider>;
   private rpcUrls: Record<Layer, string> = {} as Record<Layer, string>;
+  private flags: any;
+  private nonceTrackers: Record<Layer, number> = {} as Record<Layer, number>;
 
   static description = 'Generate transactions on the specified network(s) to produce more blocks'
 
@@ -60,10 +62,30 @@ export default class HelperActivity extends Command {
       char: 'r',
       description: 'RPC URL (overrides config for both layers)',
     }),
+    debug: Flags.boolean({
+      char: 'd',
+      default: false,
+      description: 'Enable debug mode for more detailed logging',
+    }),
+  }
+
+  private debugLog(message: string): void {
+    if (this.flags && this.flags.debug) {
+      this.log(chalk.gray(`[DEBUG] ${message}`))
+    }
+  }
+
+  private async initializeNonceTrackers(wallets: Record<Layer, ethers.Wallet>) {
+    for (const [layer, wallet] of Object.entries(wallets)) {
+      const nonce = await wallet.getNonce();
+      this.nonceTrackers[layer as Layer] = nonce;
+      this.debugLog(`Initialized nonce for ${layer}: ${nonce}`);
+    }
   }
 
   public async run(): Promise<void> {
     const { flags } = await this.parse(HelperActivity)
+    this.flags = flags // Assign parsed flags to the instance property
 
     const configPath = path.resolve(flags.config)
     const config = parseTomlConfig(configPath)
@@ -142,22 +164,23 @@ export default class HelperActivity extends Command {
           `Sender: ${publicKey} | Recipient: ${recipientAddr}`,
         ),
       )
-
-      // eslint-disable-next-line no-constant-condition
-      layers.map(async (layer) => {
-        while (true) {
-          for (const layer of layers) {
-            // eslint-disable-next-line no-await-in-loop
-            await this.sendTransaction(wallets[layer], recipientAddr, layer)
-          }
-
-          // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
-          await new Promise((resolve) => setTimeout(resolve, flags.interval * 1000))
-        }
-
-      })
     }
 
+    await this.initializeNonceTrackers(wallets);
+
+    // eslint-disable-next-line no-constant-condition
+    layers.map(async (layer) => {
+      while (true) {
+        for (const layer of layers) {
+          // eslint-disable-next-line no-await-in-loop
+          await this.sendTransaction(wallets[layer], recipientAddr, layer)
+        }
+
+        // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
+        await new Promise((resolve) => setTimeout(resolve, flags.interval * 1000))
+      }
+
+    })
   }
 
   private async replaceTransactions(wallet: ethers.Wallet, startNonce: number, endNonce: number, layer: Layer) {
@@ -210,10 +233,23 @@ export default class HelperActivity extends Command {
 
   private async sendTransaction(wallet: ethers.Wallet, recipient: string, layer: Layer) {
     try {
+      this.debugLog(`Preparing transaction for ${layer.toUpperCase()}`)
+      this.debugLog(`Sender: ${wallet.address}, Recipient: ${recipient}`)
+
+      const currentNonce = this.nonceTrackers[layer];
+      this.debugLog(`Current nonce for ${layer}: ${currentNonce}`);
+
       const tx = await wallet.sendTransaction({
         to: recipient,
         value: ethers.parseUnits('0.1', 'gwei'),
+        nonce: currentNonce,
       })
+
+      this.debugLog(`Transaction created: ${JSON.stringify(tx, null, 2)}`)
+
+      // Increment the nonce tracker immediately after sending the transaction
+      this.nonceTrackers[layer]++;
+      this.debugLog(`Updated nonce for ${layer}: ${this.nonceTrackers[layer]}`);
 
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Transaction taking longer than expected')), 5000)
@@ -223,20 +259,27 @@ export default class HelperActivity extends Command {
         const receipt = await Promise.race([tx.wait(), timeoutPromise]) as ethers.TransactionReceipt | null;
         if (receipt) {
           this.log(chalk.green(`${layer.toUpperCase()} Transaction sent: ${tx.hash} (Block: ${receipt.blockNumber})`))
+          this.debugLog(`Full receipt: ${JSON.stringify(receipt, null, 2)}`)
         } else {
           this.log(chalk.yellow(`${layer.toUpperCase()} Transaction sent: ${tx.hash} (Receipt not available)`))
         }
       } catch (timeoutError) {
         this.log(chalk.yellow(`${layer.toUpperCase()} Transaction sent, but taking longer than expected: ${tx.hash}`))
-        this.log(`${JSON.stringify(tx)}`)
+        this.debugLog(`Timeout error: ${timeoutError}`)
       }
     } catch (error) {
       this.log(
         chalk.red(
-          `Failed to send ${layer.toUpperCase()} transaction: ${error instanceof Error ? error.message : 'Unknown error'
-          }`,
-        ),
+          `Failed to send ${layer.toUpperCase()} transaction: ${error instanceof Error ? error.message : 'Unknown error'}`
+        )
       )
+      if (error instanceof Error) {
+        this.debugLog(`Error stack: ${error.stack}`)
+        if ('code' in error) {
+          this.debugLog(`Error code: ${(error as any).code}`)
+        }
+      }
+      this.debugLog(`Full error object: ${JSON.stringify(error, null, 2)}`)
     }
   }
 }

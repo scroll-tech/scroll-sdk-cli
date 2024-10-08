@@ -1,18 +1,18 @@
 import * as k8s from '@kubernetes/client-node'
-import {Command, Flags} from '@oclif/core'
+import { Command, Flags } from '@oclif/core'
 import chalk from 'chalk'
 import terminalLink from 'terminal-link'
 import WebSocket from 'ws'
 
-import {parseTomlConfig} from '../../utils/config-parser.js'
+import { parseTomlConfig } from '../../utils/config-parser.js'
 
 export default class TestIngress extends Command {
   static override description = 'Check for required ingress hosts and validate frontend URLs'
 
   static override flags = {
-    config: Flags.string({char: 'c', description: 'Path to config.toml file'}),
-    dev: Flags.boolean({char: 'd', description: 'Include development ingresses'}),
-    namespace: Flags.string({char: 'n', default: 'default', description: 'Kubernetes namespace'}),
+    config: Flags.string({ char: 'c', description: 'Path to config.toml file' }),
+    dev: Flags.boolean({ char: 'd', description: 'Include development ingresses' }),
+    namespace: Flags.string({ char: 'n', default: 'default', description: 'Kubernetes namespace' }),
   }
 
   private configValues: Record<string, string> = {}
@@ -25,7 +25,7 @@ export default class TestIngress extends Command {
   }
 
   public async run(): Promise<void> {
-    const {flags} = await this.parse(TestIngress)
+    const { flags } = await this.parse(TestIngress)
 
     if (flags.config) {
       this.loadConfig(flags.config)
@@ -67,11 +67,11 @@ export default class TestIngress extends Command {
         // eslint-disable-next-line no-await-in-loop
         const isReachable = await this.checkHost(host, name)
         if (isReachable) {
-          this.log(chalk.green(`- ${name} (${terminalLink(host, `http://${host}`)}) is reachable`))
+          this.log(chalk.green(`- ${name} is reachable`))
         } else {
           this.log(
             chalk.red(
-              `- ${name} (${terminalLink(host, `http://${host}`)}) is not reachable or did not return a 200 status`,
+              `- ${name} is not reachable or did not return a 200 status`,
             ),
           )
         }
@@ -88,51 +88,112 @@ export default class TestIngress extends Command {
 
   private async checkHost(host: string, name: string): Promise<boolean> {
     try {
-      let response: Response
+      let httpResponse: Response | undefined;
+      let httpsResponse: Response | undefined;
+      let wsSuccess = false;
+      let wssSuccess = false;
 
-      if (name === 'bridge-history-api') {
-        response = await fetch(`http://${host}/api/txs`)
-      } else if (name === 'l1-devnet') {
-        response = await fetch(`http://${host}`, {
-          body: JSON.stringify({
-            id: 1,
-            jsonrpc: '2.0',
-            method: 'web3_clientVersion',
-            params: [],
-          }),
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          method: 'POST',
-        })
-      } else if (name === 'coordinator-api') {
-        response = await fetch(`http://${host}/coordinator/v1/challenge/`, {
-          method: 'GET',
-        })
-      } else if (name === 'l2-rpc-websocket') {
-        return new Promise((resolve) => {
-          const ws = new WebSocket(`ws://${host}`)
-          ws.onopen = () => {
-            ws.close()
-            resolve(true)
-          }
-          ws.onerror = () => {
-            resolve(false)
-          }
-          // Set a timeout in case the connection hangs
-          setTimeout(() => {
-            ws.close()
-            resolve(false)
-          }, 5000)
-        })
+      if (name === 'l2-rpc-websocket') {
+        // WebSocket checks
+        wsSuccess = await this.checkWebSocket(`ws://${host}`);
+        wssSuccess = await this.checkWebSocket(`wss://${host}`);
+
+        this.log(chalk.cyan(`- ${name} (${host}):`));
+        this.log(`  WS:    ${wsSuccess ? chalk.green('✓') : chalk.red('✗')}`);
+        this.log(`  WSS:   ${wssSuccess ? chalk.green('✓') : chalk.red('✗')}`);
       } else {
-        response = await fetch(`http://${host}`)
+        // HTTP check
+        try {
+          if (name === 'bridge-history-api') {
+            httpResponse = await fetch(`http://${host}/api/txs`);
+          } else if (name === 'l1-devnet') {
+            httpResponse = await fetch(`http://${host}`, {
+              body: JSON.stringify({
+                id: 1,
+                jsonrpc: '2.0',
+                method: 'web3_clientVersion',
+                params: [],
+              }),
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              method: 'POST',
+            });
+          } else if (name === 'coordinator-api') {
+            httpResponse = await fetch(`http://${host}/coordinator/v1/challenge/`, {
+              method: 'GET',
+            });
+          } else {
+            httpResponse = await fetch(`http://${host}`);
+          }
+        } catch (error) {
+          // HTTP request failed, but we'll still try HTTPS
+        }
+
+        // HTTPS check
+        try {
+          if (name === 'bridge-history-api') {
+            httpsResponse = await fetch(`https://${host}/api/txs`);
+          } else if (name === 'l1-devnet') {
+            httpsResponse = await fetch(`https://${host}`, {
+              body: JSON.stringify({
+                id: 1,
+                jsonrpc: '2.0',
+                method: 'web3_clientVersion',
+                params: [],
+              }),
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              method: 'POST',
+            });
+          } else if (name === 'coordinator-api') {
+            httpsResponse = await fetch(`https://${host}/coordinator/v1/challenge/`, {
+              method: 'GET',
+            });
+          } else {
+            httpsResponse = await fetch(`https://${host}`);
+          }
+        } catch (error) {
+          // HTTPS request failed
+        }
+
+        const isHttpReachable = httpResponse?.status === 200;
+        const isHttpsReachable = httpsResponse?.status === 200;
+
+        this.log(chalk.cyan(`- ${name} (${host}):`));
+        this.log(`  HTTP:  ${isHttpReachable ? chalk.green('✓') : chalk.red('✗')}`);
+        this.log(`  HTTPS: ${isHttpsReachable ? chalk.green('✓') : chalk.red('✗')}`);
       }
 
-      return response.status === 200
-    } catch {
-      return false
+      const isReachable = wsSuccess || wssSuccess || httpResponse?.status === 200 || httpsResponse?.status === 200;
+      this.log(isReachable
+        ? chalk.green(`  Result: Reachable`)
+        : chalk.red(`  Result: Not reachable or did not return a 200 status`));
+
+      return isReachable;
+    } catch (error) {
+      this.log(chalk.red(`- Error checking ${name} (${host}): ${error}`));
+      return false;
     }
+  }
+
+  private async checkWebSocket(url: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const ws = new WebSocket(url);
+      ws.onopen = () => {
+        ws.close();
+        resolve(true);
+      };
+      ws.onerror = () => {
+        resolve(false);
+      };
+      // Set a timeout in case the connection hangs
+      setTimeout(() => {
+        ws.close();
+        resolve(false);
+      }, 5000);
+    });
   }
 
   private compareWithConfig(actualIngresses: Record<string, string>): void {

@@ -37,7 +37,7 @@ export default class SetupPrepCharts extends Command {
     'L2GETH_L1_CONTRACT_DEPLOYMENT_BLOCK': 'general.L1_CONTRACT_DEPLOYMENT_BLOCK',
     'L1_RPC_ENDPOINT': 'general.L1_RPC_ENDPOINT',
     'L2_RPC_ENDPOINT': 'general.L2_RPC_ENDPOINT',
-    'L1_SCROLL_CHAIN_PROXY_ADDR': 'contracts.L1_SCROLL_CHAIN_PROXY_ADDR',
+    'L1_SCROLL_CHAIN_PROXY_ADDR': 'contractsFile.L1_SCROLL_CHAIN_PROXY_ADDR',
     'L2GETH_SIGNER_ADDRESS': (chartName, productionNumber) =>
       productionNumber === '0' ? 'sequencer.L2GETH_SIGNER_ADDRESS' : `sequencer.sequencer-${productionNumber}.L2GETH_SIGNER_ADDRESS`,
     'L2GETH_PEER_LIST': 'sequencer.L2_GETH_STATIC_PEERS',
@@ -58,13 +58,24 @@ export default class SetupPrepCharts extends Command {
     'ADMIN_SYSTEM_DASHBOARD_HOST': 'ingress.ADMIN_SYSTEM_DASHBOARD_HOST',
     'L1_DEVNET_HOST': 'ingress.L1_DEVNET_HOST',
     'L1_EXPLORER_HOST': 'ingress.L1_EXPLORER_HOST',
+    'RPC_GATEWAY_WS_HOST': 'ingress.RPC_GATEWAY_WS_HOST',
     // Add more mappings as needed
   }
 
+  private configData: any = {}
   private contractsConfig: any = {}
 
-  private loadContractsConfig(): void {
+  private loadConfigs(): void {
+    const configPath = path.join(process.cwd(), 'config.toml')
     const contractsConfigPath = path.join(process.cwd(), 'config-contracts.toml')
+
+    if (fs.existsSync(configPath)) {
+      const configContent = fs.readFileSync(configPath, 'utf-8')
+      this.configData = toml.parse(configContent)
+    } else {
+      this.warn('config.toml not found. Some values may not be populated correctly.')
+    }
+
     if (fs.existsSync(contractsConfigPath)) {
       const contractsConfigContent = fs.readFileSync(contractsConfigPath, 'utf-8')
       this.contractsConfig = toml.parse(contractsConfigContent)
@@ -73,17 +84,15 @@ export default class SetupPrepCharts extends Command {
     }
   }
 
-  private getConfigValue(key: string, config: any): any {
-    const parts = key.split('.')
-    let value = config
-    for (const part of parts) {
-      if (value && typeof value === 'object' && part in value) {
-        value = value[part]
-      } else {
-        return undefined
-      }
+  private getConfigValue(key: string): any {
+    const [configType, ...rest] = key.split('.')
+    const configKey = rest.join('.')
+
+    if (configType === 'contractsFile') {
+      return this.getNestedValue(this.contractsConfig, configKey)
+    } else {
+      return this.getNestedValue(this.configData, key)
     }
-    return value
   }
 
   private async authenticateGHCR(username: string, token: string): Promise<void> {
@@ -101,7 +110,7 @@ export default class SetupPrepCharts extends Command {
     }
   }
 
-  private async processProductionYaml(valuesDir: string, config: any): Promise<{ updated: number; skipped: number }> {
+  private async processProductionYaml(valuesDir: string): Promise<{ updated: number; skipped: number }> {
     const productionFiles = fs.readdirSync(valuesDir)
       .filter(file => file.endsWith('-production.yaml') || file.match(/-production-\d+\.yaml$/))
 
@@ -122,32 +131,37 @@ export default class SetupPrepCharts extends Command {
       const changes: Array<{ key: string; oldValue: string; newValue: string }> = []
 
       // Process configMaps
-      if (productionYaml.configMaps?.env?.data) {
-        const envData = productionYaml.configMaps.env.data
-        for (const [key, value] of Object.entries(envData)) {
-          if (value === '' || value === '[""]' || value === '[]' ||
-            (Array.isArray(value) && (value.length === 0 || (value.length === 1 && value[0] === '')))) {
-            const configMapping = this.configMapping[key]
-            if (configMapping) {
-              let configKey: string
-              if (typeof configMapping === 'function') {
-                configKey = configMapping(chartName, productionNumber)
-              } else {
-                configKey = configMapping
-              }
-              const configValue = this.getConfigValue(configKey, config)
-              if (configValue !== undefined && configValue !== null) {
-                let newValue: string | string[]
-                if (Array.isArray(configValue)) {
-                  newValue = JSON.stringify(configValue)
-                } else {
-                  newValue = String(configValue)
+      if (productionYaml.configMaps) {
+        for (const [configMapName, configMapData] of Object.entries(productionYaml.configMaps)) {
+          if (configMapData && typeof configMapData === 'object' && 'data' in configMapData) {
+            const envData = (configMapData as any).data
+            for (const [key, value] of Object.entries(envData)) {
+              if (value === '' || value === '[""]' || value === '[]' ||
+                (Array.isArray(value) && (value.length === 0 || (value.length === 1 && value[0] === ''))) ||
+                value === null || value === undefined) {
+                const configMapping = this.configMapping[key]
+                if (configMapping) {
+                  let configKey: string
+                  if (typeof configMapping === 'function') {
+                    configKey = configMapping(chartName, productionNumber)
+                  } else {
+                    configKey = configMapping
+                  }
+                  const configValue = this.getConfigValue(configKey)
+                  if (configValue !== undefined && configValue !== null) {
+                    let newValue: string | string[]
+                    if (Array.isArray(configValue)) {
+                      newValue = JSON.stringify(configValue)
+                    } else {
+                      newValue = String(configValue)
+                    }
+                    changes.push({ key, oldValue: JSON.stringify(value), newValue: newValue })
+                    envData[key] = newValue
+                    updated = true
+                  } else {
+                    this.log(chalk.yellow(`${chartName}: No value found for ${configKey}`))
+                  }
                 }
-                changes.push({ key, oldValue: JSON.stringify(value), newValue: newValue })
-                envData[key] = newValue
-                updated = true
-              } else {
-                this.log(chalk.yellow(`${chartName}: No value found for ${configKey}`))
               }
             }
           }
@@ -155,51 +169,69 @@ export default class SetupPrepCharts extends Command {
       }
 
       // Process ingress
-      if (productionYaml.ingress?.main?.hosts) {
-        const hosts = productionYaml.ingress.main.hosts
-        let ingressUpdated = false
-        for (let i = 0; i < hosts.length; i++) {
-          if (hosts[i].host === '') {
-            let configValue: string | undefined
+      if (productionYaml.ingress) {
+        let ingressUpdated = false;
+        for (const [ingressKey, ingressValue] of Object.entries(productionYaml.ingress)) {
+          if (ingressValue && typeof ingressValue === 'object' && 'hosts' in ingressValue) {
+            const hosts = ingressValue.hosts as Array<{ host: string }>;
+            if (Array.isArray(hosts)) {
+              for (let i = 0; i < hosts.length; i++) {
+                if (typeof hosts[i] === 'object' && 'host' in hosts[i]) {
+                  let configValue: string | undefined;
 
-            // Check for direct mapping first
-            const directMappingKey = `ingress.${chartName.toUpperCase().replace(/-/g, '_')}_HOST`
-            configValue = this.getConfigValue(directMappingKey, config)
+                  if (chartName === 'l2-rpc' && ingressKey === 'websocket') {
+                    configValue = this.getConfigValue('ingress.RPC_GATEWAY_WS_HOST');
+                  } else {
+                    // Check for direct mapping first
+                    const directMappingKey = `ingress.${chartName.toUpperCase().replace(/-/g, '_')}_HOST`;
+                    configValue = this.getConfigValue(directMappingKey);
 
-            // If direct mapping doesn't exist, try alternative mappings
-            if (!configValue) {
-              const alternativeMappings: Record<string, string> = {
-                'frontends': 'FRONTEND_HOST',
-                'bridge-history-api': 'BRIDGE_HISTORY_API_HOST',
-                'rollup-explorer-backend': 'ROLLUP_EXPLORER_API_HOST',
-                'coordinator-api': 'COORDINATOR_API_HOST',
-                'l2-rpc': 'RPC_GATEWAY_HOST',
-                'blockscout': 'BLOCKSCOUT_HOST',
-                'admin-system-dashboard': 'ADMIN_SYSTEM_DASHBOARD_HOST',
+                    // If direct mapping doesn't exist, try alternative mappings
+                    if (!configValue) {
+                      const alternativeMappings: Record<string, string> = {
+                        'frontends': 'FRONTEND_HOST',
+                        'bridge-history-api': 'BRIDGE_HISTORY_API_HOST',
+                        'rollup-explorer-backend': 'ROLLUP_EXPLORER_API_HOST',
+                        'coordinator-api': 'COORDINATOR_API_HOST',
+                        'l2-rpc': 'RPC_GATEWAY_HOST',
+                        'l1-devnet': 'L1_DEVNET_HOST',
+                        'blockscout': 'BLOCKSCOUT_HOST',
+                        'admin-system-dashboard': 'ADMIN_SYSTEM_DASHBOARD_HOST',
+                      };
+
+                      const alternativeKey = alternativeMappings[chartName];
+                      if (alternativeKey) {
+                        configValue = this.getConfigValue(`ingress.${alternativeKey}`);
+                      }
+                    }
+                  }
+
+                  if (configValue && configValue !== hosts[i].host) {
+                    changes.push({ key: `ingress.${ingressKey}.hosts[${i}].host`, oldValue: hosts[i].host, newValue: configValue });
+                    hosts[i].host = configValue;
+                    ingressUpdated = true;
+                  }
+                }
               }
-
-              const alternativeKey = alternativeMappings[chartName]
-              if (alternativeKey) {
-                configValue = this.getConfigValue(`ingress.${alternativeKey}`, config)
-              }
-            }
-
-            if (configValue) {
-              changes.push({ key: `ingress.main.hosts[${i}].host`, oldValue: '', newValue: configValue })
-              hosts[i].host = configValue
-              ingressUpdated = true
             }
           }
         }
+
         if (ingressUpdated) {
-          updated = true
+          updated = true;
           // Update the tls section if it exists
-          if (productionYaml.ingress.main.tls) {
-            productionYaml.ingress.main.tls.forEach((tlsEntry: any) => {
-              if (Array.isArray(tlsEntry.hosts)) {
-                tlsEntry.hosts = hosts.map((host: any) => host.host)
+          for (const [ingressKey, ingressValue] of Object.entries(productionYaml.ingress)) {
+            if (ingressValue && typeof ingressValue === 'object' && 'tls' in ingressValue && 'hosts' in ingressValue) {
+              const tlsEntries = ingressValue.tls as Array<{ hosts: string[] }>;
+              const hosts = ingressValue.hosts as Array<{ host: string }>;
+              if (Array.isArray(tlsEntries) && Array.isArray(hosts)) {
+                tlsEntries.forEach((tlsEntry) => {
+                  if (Array.isArray(tlsEntry.hosts)) {
+                    tlsEntry.hosts = hosts.map((host) => host.host);
+                  }
+                });
               }
-            })
+            }
           }
         }
       }
@@ -297,8 +329,8 @@ export default class SetupPrepCharts extends Command {
 
     this.log('Starting chart preparation...')
 
-    // Load contracts config before processing yaml files
-    this.loadContractsConfig()
+    // Load configs before processing yaml files
+    this.loadConfigs()
 
     if (flags['github-username'] && flags['github-token']) {
       try {
@@ -317,19 +349,11 @@ export default class SetupPrepCharts extends Command {
     await this.validateMakefile(skipAuthCheck)
 
     // Process production.yaml files
-    const configPath = path.join(process.cwd(), 'config.toml')
-    if (fs.existsSync(configPath)) {
-      const configContent = fs.readFileSync(configPath, 'utf-8')
-      const config = toml.parse(configContent)
+    const valuesDir = flags['values-dir']
+    const { updated, skipped } = await this.processProductionYaml(valuesDir)
 
-      const valuesDir = flags['values-dir']
-      const { updated, skipped } = await this.processProductionYaml(valuesDir, config)
-
-      this.log(chalk.green(`\nUpdated production YAML files for ${updated} chart(s).`))
-      this.log(chalk.yellow(`Skipped ${skipped} chart(s).`))
-    } else {
-      this.warn('config.toml not found. Skipping production YAML processing.')
-    }
+    this.log(chalk.green(`\nUpdated production YAML files for ${updated} chart(s).`))
+    this.log(chalk.yellow(`Skipped ${skipped} chart(s).`))
 
     this.log('Chart preparation completed.')
   }

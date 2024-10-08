@@ -231,7 +231,7 @@ class HashicorpVaultDevService implements SecretService {
     let l2SequencerSecrets: Record<string, string> = {}
 
     for (const file of envFiles) {
-      const secretName = path.basename(file, '.env')
+      const secretName = path.basename(file, '.env') + '-env'
       if (secretName.startsWith('l2-sequencer-')) {
         console.log(chalk.cyan(`Processing L2 Sequencer secret: ${secretName}`))
         const data = await this.convertEnvToDict(path.join(secretsDir, file))
@@ -245,8 +245,8 @@ class HashicorpVaultDevService implements SecretService {
 
     // Push combined L2 Sequencer secrets
     if (Object.keys(l2SequencerSecrets).length > 0) {
-      console.log(chalk.cyan(`Processing combined L2 Sequencer secrets: scroll/l2-sequencer-secret`))
-      await this.pushToVault('l2-sequencer-secret', l2SequencerSecrets)
+      console.log(chalk.cyan(`Processing combined L2 Sequencer secrets: scroll/l2-sequencer-secret-env`))
+      await this.pushToVault('l2-sequencer-secret-env', l2SequencerSecrets)
     }
 
     console.log(chalk.green("All secrets have been processed and populated in Vault."))

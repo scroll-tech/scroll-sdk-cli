@@ -112,7 +112,7 @@ export default class SetupConfigs extends Command {
     const config = toml.parse(configContent)
 
     const services = [
-      'admin-system-backend', 'blockscout', 'bridge-history-api', 'bridge-history-fetcher', 'chain-monitor', 'coordinator-api', 'coordinator-cron',
+      'admin-system-backend', 'admin-system-cron', 'blockscout', 'bridge-history-api', 'bridge-history-fetcher', 'chain-monitor', 'coordinator-api', 'coordinator-cron',
       'gas-oracle', 'l1-explorer', 'l2-sequencer', 'rollup-node'
     ]
 
@@ -132,7 +132,8 @@ export default class SetupConfigs extends Command {
   // TODO: check privatekey secrets once integrated
   private generateEnvContent(service: string, config: any): { [key: string]: string } {
     const mapping: Record<string, string[]> = {
-      'admin-system-backend': ['ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMIN_AUTH_DB_CONFIG', 'ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMIN_DB_CONFIG_DSN', 'ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMION_READ_ONLY_DB_CONFIG_DSN'],
+      'admin-system-backend': ['ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMIN_AUTH_DB_CONFIG_DSN', 'ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMIN_DB_CONFIG_DSN', 'ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMIN_READ_ONLY_DB_CONFIG_DSN'],
+      'admin-system-cron': ['ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMIN_AUTH_DB_CONFIG_DSN', 'ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMIN_DB_CONFIG_DSN', 'ADMIN_SYSTEM_BACKEND_DB_CONNECTION_STRING:SCROLL_ADMIN_READ_ONLY_DB_CONFIG_DSN'],
       'blockscout': ['BLOCKSCOUT_DB_CONNECTION_STRING:DATABASE_URL'],
       'bridge-history-api': ['BRIDGE_HISTORY_DB_CONNECTION_STRING:SCROLL_BRIDGE_HISTORY_DB_DSN'],
       'bridge-history-fetcher': ['BRIDGE_HISTORY_DB_CONNECTION_STRING:SCROLL_BRIDGE_HISTORY_DB_DSN'],
@@ -482,39 +483,29 @@ export default class SetupConfigs extends Command {
     }
 
     const fileMappings = [
-      { source: 'admin-system-backend-config.yaml', target: 'admin-system-backend-config.yaml', prefix: 'admin-system-backend:' },
-      { source: 'admin-system-backend-config.yaml', target: 'admin-system-cron-config.yaml', prefix: 'admin-system-cron:' },
-      { source: 'balance-checker-config.yaml', target: 'balance-checker-config.yaml', prefix: 'balance-checker:' },
-      { source: 'bridge-history-config.yaml', target: 'bridge-history-api-config.yaml', prefix: 'bridge-history-api:' },
-      { source: 'bridge-history-config.yaml', target: 'bridge-history-fetcher-config.yaml', prefix: 'bridge-history-fetcher:' },
-      { source: 'chain-monitor-config.yaml', target: 'chain-monitor-config.yaml', prefix: 'chain-monitor:' },
-      { source: 'coordinator-config.yaml', target: 'coordinator-api-config.yaml', prefix: 'coordinator-api:' },
-      { source: 'coordinator-config.yaml', target: 'coordinator-cron-config.yaml', prefix: 'coordinator-cron:' },
-      { source: 'frontend-config.yaml', target: 'frontends-config.yaml', prefix: 'frontends:' },
-      { source: 'genesis.yaml', target: 'genesis.yaml', prefix: 'scroll-common:' },
-      { source: 'rollup-config.yaml', target: 'gas-oracle-config.yaml', prefix: 'gas-oracle:' },
-      { source: 'rollup-config.yaml', target: 'rollup-node-config.yaml', prefix: 'rollup-node:' },
-      { source: 'rollup-explorer-backend-config.yaml', target: 'rollup-explorer-backend-config.yaml', prefix: 'rollup-explorer-backend:' },
+      { source: 'admin-system-backend-config.yaml', target: 'admin-system-backend-config.yaml' },
+      { source: 'admin-system-backend-config.yaml', target: 'admin-system-cron-config.yaml' },
+      { source: 'balance-checker-config.yaml', target: 'balance-checker-config.yaml' },
+      { source: 'bridge-history-config.yaml', target: 'bridge-history-api-config.yaml' },
+      { source: 'bridge-history-config.yaml', target: 'bridge-history-fetcher-config.yaml' },
+      { source: 'chain-monitor-config.yaml', target: 'chain-monitor-config.yaml' },
+      { source: 'coordinator-config.yaml', target: 'coordinator-api-config.yaml' },
+      { source: 'coordinator-config.yaml', target: 'coordinator-cron-config.yaml' },
+      { source: 'frontend-config.yaml', target: 'frontends-config.yaml' },
+      { source: 'genesis.yaml', target: 'genesis.yaml' },
+      { source: 'rollup-config.yaml', target: 'gas-oracle-config.yaml' },
+      { source: 'rollup-config.yaml', target: 'rollup-node-config.yaml' },
+      { source: 'rollup-explorer-backend-config.yaml', target: 'rollup-explorer-backend-config.yaml' },
     ];
-
-    // Read all source files first
-    const sourceFiles = new Map<string, string>();
-    for (const mapping of fileMappings) {
-      const sourcePath = path.join(sourceDir, mapping.source);
-      if (fs.existsSync(sourcePath) && !sourceFiles.has(mapping.source)) {
-        sourceFiles.set(mapping.source, fs.readFileSync(sourcePath, 'utf8'));
-      }
-    }
 
     // Process all mappings
     for (const mapping of fileMappings) {
-      const content = sourceFiles.get(mapping.source);
-      if (content) {
-        const targetPath = path.join(targetDir, mapping.target);
+      const sourcePath = path.join(sourceDir, mapping.source);
+      const targetPath = path.join(targetDir, mapping.target);
+
+      if (fs.existsSync(sourcePath)) {
         try {
-          const indentedContent = content.split('\n').map(line => `  ${line}`).join('\n');
-          const newContent = `${mapping.prefix}\n${indentedContent}`;
-          fs.writeFileSync(targetPath, newContent);
+          fs.copyFileSync(sourcePath, targetPath);
           this.log(chalk.green(`Processed file: ${mapping.source} -> ${mapping.target}`));
         } catch (error: unknown) {
           if (error instanceof Error) {
@@ -529,16 +520,18 @@ export default class SetupConfigs extends Command {
     }
 
     // Remove source files after all processing is complete
-    for (const sourceFile of sourceFiles.keys()) {
-      const sourcePath = path.join(sourceDir, sourceFile);
-      try {
-        fs.unlinkSync(sourcePath);
-        this.log(chalk.green(`Removed source file: ${sourceFile}`));
-      } catch (error: unknown) {
-        if (error instanceof Error) {
-          this.log(chalk.red(`Error removing file ${sourceFile}: ${error.message}`));
-        } else {
-          this.log(chalk.red(`Unknown error removing file ${sourceFile}`));
+    for (const mapping of fileMappings) {
+      const sourcePath = path.join(sourceDir, mapping.source);
+      if (fs.existsSync(sourcePath)) {
+        try {
+          fs.unlinkSync(sourcePath);
+          this.log(chalk.green(`Removed source file: ${mapping.source}`));
+        } catch (error: unknown) {
+          if (error instanceof Error) {
+            this.log(chalk.red(`Error removing file ${mapping.source}: ${error.message}`));
+          } else {
+            this.log(chalk.red(`Unknown error removing file ${mapping.source}`));
+          }
         }
       }
     }
@@ -556,9 +549,7 @@ export default class SetupConfigs extends Command {
       if (fs.existsSync(sourcePath)) {
         const content = fs.readFileSync(sourcePath, 'utf8');
         const yamlContent = {
-          contracts: {
-            [file.key]: content,
-          },
+          [file.key]: content,
         };
         const yamlString = yaml.dump(yamlContent, { indent: 2 });
         fs.writeFileSync(targetPath, yamlString);

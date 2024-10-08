@@ -124,11 +124,14 @@ export default class HelperFundAccounts extends Command {
     this.blockExplorers.l1.blockExplorerURI = config?.frontend?.EXTERNAL_EXPLORER_URI_L1
     this.blockExplorers.l2.blockExplorerURI = config?.frontend?.EXTERNAL_EXPLORER_URI_L2
 
-    this.l1ETHGateway = config?.contracts?.L1_ETH_GATEWAY_PROXY_ADDR
+    // Parse config-contracts.toml
+    const contractsConfigPath = path.resolve(flags.contracts)
+    const contractsConfig = parseTomlConfig(contractsConfigPath)
+    this.l1ETHGateway = contractsConfig.L1_ETH_GATEWAY_PROXY_ADDR
 
     if (flags['private-key']) {
       this.fundingWallet = new ethers.Wallet(flags['private-key'], this.l1Provider)
-    } else if (!flags.manual && !flags.dev) {
+    } else if (!flags.manual) {
       this.fundingWallet = new ethers.Wallet(config.accounts.DEPLOYER_PRIVATE_KEY, this.l1Provider)
     }
 
@@ -138,9 +141,6 @@ export default class HelperFundAccounts extends Command {
     if (this.altGasTokenEnabled) {
       this.log(chalk.yellow('Alternative Gas Token mode is enabled.'))
 
-      // Parse config-contracts.toml
-      const contractsConfigPath = path.resolve(flags.contracts)
-      const contractsConfig = parseTomlConfig(contractsConfigPath)
       this.l1GasTokenGateway = contractsConfig.L1_GAS_TOKEN_GATEWAY_PROXY_ADDR
       this.l1GasTokenAddress = contractsConfig.L1_GAS_TOKEN_ADDR
 
@@ -280,6 +280,8 @@ export default class HelperFundAccounts extends Command {
 
       const gasLimit = BigInt(170_000)
       const value = ethers.parseEther((amount + 0.001).toString())
+
+      console.log(this.l1ETHGateway);
 
       const l1ETHGateway = new ethers.Contract(
         this.l1ETHGateway,

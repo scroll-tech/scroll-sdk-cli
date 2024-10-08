@@ -114,88 +114,95 @@ spec:
       const content = fs.readFileSync(yamlPath, 'utf8')
       const yamlContent: any = yaml.load(content)
 
-      if (yamlContent.ingress?.main) {
-        const originalContent = yaml.dump(yamlContent.ingress.main, { lineWidth: -1, noRefs: true })
-        let updated = false
+      const ingressTypes = ['main', 'websocket']
+      let updated = false
 
-        // Add or update annotation
-        if (!yamlContent.ingress.main.annotations) {
-          yamlContent.ingress.main.annotations = {}
-        }
-        if (yamlContent.ingress.main.annotations['cert-manager.io/cluster-issuer'] !== issuer) {
-          yamlContent.ingress.main.annotations['cert-manager.io/cluster-issuer'] = issuer
-          updated = true
-        }
+      for (const ingressType of ingressTypes) {
+        if (yamlContent.ingress?.[ingressType]) {
+          const originalContent = yaml.dump(yamlContent.ingress[ingressType], { lineWidth: -1, noRefs: true })
+          let ingressUpdated = false
 
-        // Update or add TLS configuration
-        if (yamlContent.ingress.main.hosts && yamlContent.ingress.main.hosts.length > 0) {
-          const firstHost = yamlContent.ingress.main.hosts[0]
-          if (typeof firstHost === 'object' && firstHost.host) {
-            const hostname = firstHost.host
-
-            if (!yamlContent.ingress.main.tls) {
-              yamlContent.ingress.main.tls = [{
-                secretName: `${chart}-tls`,
-                hosts: [hostname],
-              }]
-              updated = true
-            } else if (yamlContent.ingress.main.tls.length === 0) {
-              yamlContent.ingress.main.tls.push({
-                secretName: `${chart}-tls`,
-                hosts: [hostname],
-              })
-              updated = true
-            } else {
-              // Update existing TLS configuration
-              yamlContent.ingress.main.tls.forEach((tlsConfig: any) => {
-                if (!tlsConfig.secretName || tlsConfig.secretName !== `${chart}-tls`) {
-                  tlsConfig.secretName = `${chart}-tls`
-                  updated = true
-                }
-                if (!tlsConfig.hosts || !tlsConfig.hosts.includes(hostname)) {
-                  tlsConfig.hosts = [hostname]
-                  updated = true
-                }
-              })
-            }
+          // Add or update annotation
+          if (!yamlContent.ingress[ingressType].annotations) {
+            yamlContent.ingress[ingressType].annotations = {}
           }
-        }
+          if (yamlContent.ingress[ingressType].annotations['cert-manager.io/cluster-issuer'] !== issuer) {
+            yamlContent.ingress[ingressType].annotations['cert-manager.io/cluster-issuer'] = issuer
+            ingressUpdated = true
+          }
 
-        if (updated) {
-          const updatedContent = yaml.dump(yamlContent.ingress.main, { lineWidth: -1, noRefs: true })
+          // Update or add TLS configuration
+          if (yamlContent.ingress[ingressType].hosts && yamlContent.ingress[ingressType].hosts.length > 0) {
+            const firstHost = yamlContent.ingress[ingressType].hosts[0]
+            if (typeof firstHost === 'object' && firstHost.host) {
+              const hostname = firstHost.host
+              const secretName = ingressType === 'main' ? `${chart}-tls` : `${chart}-${ingressType}-tls`
 
-          if (this.debugMode) {
-            this.log(chalk.yellow(`\nProposed changes for ${chart}:`))
-            this.log(chalk.red('- Original content:'))
-            this.log(originalContent)
-            this.log(chalk.green('+ Updated content:'))
-            this.log(updatedContent)
-
-            const confirmUpdate = await confirm({
-              message: chalk.cyan(`Do you want to apply these changes to ${chart}?`),
-            })
-
-            if (!confirmUpdate) {
-              this.log(chalk.yellow(`Skipped updating ${chart}`))
-              return
+              if (!yamlContent.ingress[ingressType].tls) {
+                yamlContent.ingress[ingressType].tls = [{
+                  secretName: secretName,
+                  hosts: [hostname],
+                }]
+                ingressUpdated = true
+              } else if (yamlContent.ingress[ingressType].tls.length === 0) {
+                yamlContent.ingress[ingressType].tls.push({
+                  secretName: secretName,
+                  hosts: [hostname],
+                })
+                ingressUpdated = true
+              } else {
+                // Update existing TLS configuration
+                yamlContent.ingress[ingressType].tls.forEach((tlsConfig: any) => {
+                  if (!tlsConfig.secretName || tlsConfig.secretName !== secretName) {
+                    tlsConfig.secretName = secretName
+                    ingressUpdated = true
+                  }
+                  if (!tlsConfig.hosts || !tlsConfig.hosts.includes(hostname)) {
+                    tlsConfig.hosts = [hostname]
+                    ingressUpdated = true
+                  }
+                })
+              }
             }
           }
 
-          // Write updated YAML back to file
-          const updatedYamlContent = yaml.dump(yamlContent, {
-            lineWidth: -1,
-            noRefs: true,
-            quotingType: '"',
-            forceQuotes: false
-          })
-          fs.writeFileSync(yamlPath, updatedYamlContent)
+          if (ingressUpdated) {
+            updated = true
+            const updatedContent = yaml.dump(yamlContent.ingress[ingressType], { lineWidth: -1, noRefs: true })
 
-          this.log(chalk.green(`Updated TLS configuration for ${chart}`))
-        } else {
-          this.log(chalk.green(`No changes needed for ${chart}`))
+            if (this.debugMode) {
+              this.log(chalk.yellow(`\nProposed changes for ${chart} (${ingressType}):`))
+              this.log(chalk.red('- Original content:'))
+              this.log(originalContent)
+              this.log(chalk.green('+ Updated content:'))
+              this.log(updatedContent)
+
+              const confirmUpdate = await confirm({
+                message: chalk.cyan(`Do you want to apply these changes to ${chart} (${ingressType})?`),
+              })
+
+              if (!confirmUpdate) {
+                this.log(chalk.yellow(`Skipped updating ${chart} (${ingressType})`))
+                continue
+              }
+            }
+
+            this.log(chalk.green(`Updated TLS configuration for ${chart} (${ingressType})`))
+          } else {
+            this.log(chalk.green(`No changes needed for ${chart} (${ingressType})`))
+          }
         }
-      } else {
-        this.log(chalk.yellow(`No ingress.main configuration found in ${chart}`))
+      }
+
+      if (updated) {
+        // Write updated YAML back to file
+        const updatedYamlContent = yaml.dump(yamlContent, {
+          lineWidth: -1,
+          noRefs: true,
+          quotingType: '"',
+          forceQuotes: false
+        })
+        fs.writeFileSync(yamlPath, updatedYamlContent)
       }
     } catch (error) {
       this.error(chalk.red(`Failed to update ${chart}: ${error}`))
@@ -251,6 +258,7 @@ spec:
         'bridge-history-api',
         'rollup-explorer-backend',
         'l2-rpc',
+        'l1-devnet',
       ]
 
       for (const chart of chartsToUpdate) {
