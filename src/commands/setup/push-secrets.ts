@@ -33,7 +33,7 @@ class AWSSecretService implements SecretService {
   }
 
   private async pushToAWSSecret(content: string, secretName: string): Promise<void> {
-    const command = `aws secretsmanager create-secret --name "${this.prefixName}/${secretName}" --secret-string '${content}' --region ${this.region}`
+    const command = `aws secretsmanager create-secret --name "${this.prefixName}/${secretName}" --secret-string "${JSON.stringify(content).slice(1, -1)}" --region ${this.region}`
     try {
       await execAsync(command)
       console.log(chalk.green(`Successfully pushed secret: ${this.prefixName}/${secretName}`))
