@@ -19,7 +19,7 @@ pnpm-lock.yaml
 
 charts
 /config*
-.vscode
+/.vscode
 
 e2e_resume*
 
