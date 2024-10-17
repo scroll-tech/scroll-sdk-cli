@@ -1,11 +1,11 @@
+import { confirm, input, select } from '@inquirer/prompts'
 import { Command, Flags } from '@oclif/core'
-import * as fs from 'fs'
-import * as path from 'path'
-import { exec } from 'child_process'
-import { promisify } from 'util'
-import { select, input, confirm } from '@inquirer/prompts'
-import * as yaml from 'js-yaml'
 import chalk from 'chalk'
+import { exec } from 'child_process'
+import * as fs from 'fs'
+import * as yaml from 'js-yaml'
+import * as path from 'path'
+import { promisify } from 'util'
 
 const execAsync = promisify(exec)
 
@@ -14,32 +14,85 @@ interface SecretService {
 }
 
 class AWSSecretService implements SecretService {
-  constructor(private region: string, private prefixName: string) { }
+  constructor(private region: string, private prefixName: string, private debug: boolean) { }
 
-  private async convertToJson(filePath: string): Promise<string> {
+  private async secretExists(secretName: string): Promise<boolean> {
+    const fullSecretName = `${this.prefixName}/${secretName}`
+    try {
+      await execAsync(`aws secretsmanager describe-secret --secret-id "${fullSecretName}" --region ${this.region}`)
+      return true
+    } catch (error: any) {
+      if (error.message.includes('ResourceNotFoundException')) {
+        return false
+      }
+      throw error
+    }
+  }
+
+  private async createOrUpdateSecret(content: Record<string, string>, secretName: string): Promise<void> {
+    const fullSecretName = `${this.prefixName}/${secretName}`
+    const jsonContent = JSON.stringify(content)
+    const escapedJsonContent = jsonContent.replace(/'/g, "'\\''")
+
+    if (await this.secretExists(secretName)) {
+      const shouldOverride = await confirm({
+        message: chalk.yellow(`Secret ${fullSecretName} already exists. Do you want to override it?`),
+        default: false,
+      })
+
+      if (!shouldOverride) {
+        console.log(chalk.yellow(`Skipping secret: ${fullSecretName}`))
+        return
+      }
+
+      const command = `aws secretsmanager put-secret-value --secret-id "${fullSecretName}" --secret-string '${escapedJsonContent}' --region ${this.region}`
+      if (this.debug) {
+        console.log(chalk.yellow('--- Debug Output ---'))
+        console.log(chalk.cyan(`Command: ${command}`))
+        console.log(chalk.yellow('-------------------'))
+      }
+      try {
+        await execAsync(command)
+        console.log(chalk.green(`Successfully updated secret: ${fullSecretName}`))
+      } catch (error) {
+        console.error(chalk.red(`Failed to update secret: ${fullSecretName}`))
+        console.error(chalk.red(`Error details: ${error}`))
+        throw error
+      }
+    } else {
+      const command = `aws secretsmanager create-secret --name "${fullSecretName}" --secret-string '${escapedJsonContent}' --region ${this.region}`
+      if (this.debug) {
+        console.log(chalk.yellow('--- Debug Output ---'))
+        console.log(chalk.cyan(`Command: ${command}`))
+        console.log(chalk.yellow('-------------------'))
+      }
+      try {
+        await execAsync(command)
+        console.log(chalk.green(`Successfully created secret: ${fullSecretName}`))
+      } catch (error) {
+        console.error(chalk.red(`Failed to create secret: ${fullSecretName}`))
+        console.error(chalk.red(`Error details: ${error}`))
+        throw error
+      }
+    }
+  }
+
+  private async convertEnvToDict(filePath: string): Promise<Record<string, string>> {
     const content = await fs.promises.readFile(filePath, 'utf-8')
-    const lines = content.split('\n')
-    const jsonContent: Record<string, string> = {}
+    const result: Record<string, string> = {}
 
+    const lines = content.split('\n')
     for (const line of lines) {
-      if (line.trim() && !line.startsWith('#')) {
-        const [key, ...valueParts] = line.split(':')
-        const value = valueParts.join(':').trim()
-        jsonContent[key.trim()] = value.replace(/^"/, '').replace(/"$/, '')
+      const match = line.match(/^([^=]+)=(.*)$/)
+      if (match) {
+        const key = match[1].trim()
+        let value = match[2].trim()
+        value = value.replace(/^["'](.*)["']$/, '$1')
+        result[key] = value
       }
     }
 
-    return JSON.stringify(jsonContent)
-  }
-
-  private async pushToAWSSecret(content: string, secretName: string): Promise<void> {
-    const command = `aws secretsmanager create-secret --name "${this.prefixName}/${secretName}" --secret-string "${JSON.stringify(content).slice(1, -1)}" --region ${this.region}`
-    try {
-      await execAsync(command)
-      console.log(chalk.green(`Successfully pushed secret: ${this.prefixName}/${secretName}`))
-    } catch (error) {
-      console.error(chalk.red(`Failed to push secret: ${this.prefixName}/${secretName}`))
-    }
+    return result
   }
 
   async pushSecrets(): Promise<void> {
@@ -51,7 +104,7 @@ class AWSSecretService implements SecretService {
       const secretName = path.basename(file, '.json')
       console.log(chalk.cyan(`Processing JSON secret: ${secretName}`))
       const content = await fs.promises.readFile(path.join(secretsDir, file), 'utf-8')
-      await this.pushToAWSSecret(content, secretName)
+      await this.createOrUpdateSecret({ 'migrate-db.json': content }, secretName)
     }
 
     // Process ENV files
@@ -62,20 +115,19 @@ class AWSSecretService implements SecretService {
       const secretName = path.basename(file, '.env')
       if (secretName.startsWith('l2-sequencer-')) {
         console.log(chalk.cyan(`Processing L2 Sequencer secret: ${secretName}`))
-        const content = await this.convertToJson(path.join(secretsDir, file))
-        l2SequencerSecrets = { ...l2SequencerSecrets, ...JSON.parse(content) }
+        const data = await this.convertEnvToDict(path.join(secretsDir, file))
+        l2SequencerSecrets = { ...l2SequencerSecrets, ...data }
       } else {
-        console.log(chalk.cyan(`Processing ENV secret: ${secretName}`))
-        const content = await this.convertToJson(path.join(secretsDir, file))
-        await this.pushToAWSSecret(content, secretName)
+        console.log(chalk.cyan(`Processing ENV secret: ${secretName}-env`))
+        const data = await this.convertEnvToDict(path.join(secretsDir, file))
+        await this.createOrUpdateSecret(data, `${secretName}-env`)
       }
     }
 
     // Push combined L2 Sequencer secrets
     if (Object.keys(l2SequencerSecrets).length > 0) {
-      console.log(chalk.cyan(`Processing combined L2 Sequencer secrets: l2-sequencer-secret`))
-      const combinedContent = JSON.stringify(l2SequencerSecrets)
-      await this.pushToAWSSecret(combinedContent, 'l2-sequencer-secret')
+      console.log(chalk.cyan(`Processing combined L2 Sequencer secrets: l2-sequencer-secret-env`))
+      await this.createOrUpdateSecret(l2SequencerSecrets, 'l2-sequencer-secret-env')
     }
   }
 }
@@ -321,7 +373,6 @@ export default class SetupPushSecrets extends Command {
     const valuesDir = path.join(process.cwd(), this.flags['values-dir']);
     if (!fs.existsSync(valuesDir)) {
       this.error(chalk.red(`Values directory not found at ${valuesDir}`));
-      return;
     }
 
     let credentials: Record<string, string>;
@@ -422,7 +473,7 @@ export default class SetupPushSecrets extends Command {
 
     if (secretService === 'aws') {
       const awsCredentials = await this.getAWSCredentials()
-      service = new AWSSecretService(awsCredentials.secretRegion, awsCredentials.prefixName)
+      service = new AWSSecretService(awsCredentials.secretRegion, awsCredentials.prefixName, flags.debug)
       provider = 'aws'
     } else if (secretService === 'vault') {
       service = new HashicorpVaultDevService(flags.debug)
