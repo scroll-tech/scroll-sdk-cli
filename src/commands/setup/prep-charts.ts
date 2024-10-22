@@ -59,6 +59,7 @@ export default class SetupPrepCharts extends Command {
     'L1_DEVNET_HOST': 'ingress.L1_DEVNET_HOST',
     'L1_EXPLORER_HOST': 'ingress.L1_EXPLORER_HOST',
     'RPC_GATEWAY_WS_HOST': 'ingress.RPC_GATEWAY_WS_HOST',
+    'GRAFANA_HOST': 'ingress.GRAFANA_HOST',
     // Add more mappings as needed
   }
 
@@ -197,6 +198,7 @@ export default class SetupPrepCharts extends Command {
                         'l1-devnet': 'L1_DEVNET_HOST',
                         'blockscout': 'BLOCKSCOUT_HOST',
                         'admin-system-dashboard': 'ADMIN_SYSTEM_DASHBOARD_HOST',
+                        'grafana': 'GRAFANA_HOST',
                       };
 
                       const alternativeKey = alternativeMappings[chartName];
