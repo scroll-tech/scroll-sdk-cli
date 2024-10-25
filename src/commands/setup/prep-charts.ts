@@ -59,6 +59,7 @@ export default class SetupPrepCharts extends Command {
     'L1_DEVNET_HOST': 'ingress.L1_DEVNET_HOST',
     'L1_EXPLORER_HOST': 'ingress.L1_EXPLORER_HOST',
     'RPC_GATEWAY_WS_HOST': 'ingress.RPC_GATEWAY_WS_HOST',
+    'GRAFANA_HOST': 'ingress.GRAFANA_HOST',
     // Add more mappings as needed
   }
 
@@ -221,6 +222,46 @@ export default class SetupPrepCharts extends Command {
           updated = true;
           // Update the tls section if it exists
           for (const [ingressKey, ingressValue] of Object.entries(productionYaml.ingress)) {
+            if (ingressValue && typeof ingressValue === 'object' && 'tls' in ingressValue && 'hosts' in ingressValue) {
+              const tlsEntries = ingressValue.tls as Array<{ hosts: string[] }>;
+              const hosts = ingressValue.hosts as Array<{ host: string }>;
+              if (Array.isArray(tlsEntries) && Array.isArray(hosts)) {
+                tlsEntries.forEach((tlsEntry) => {
+                  if (Array.isArray(tlsEntry.hosts)) {
+                    tlsEntry.hosts = hosts.map((host) => host.host);
+                  }
+                });
+              }
+            }
+          }
+        }
+      }
+
+      if (productionYaml.grafana) {
+        let ingressUpdated = false;
+        let ingressValue = productionYaml.grafana.ingress;
+        if (ingressValue && typeof ingressValue === 'object' && 'hosts' in ingressValue) {
+          const hosts = ingressValue.hosts as Array<string>;
+          if (Array.isArray(hosts)) {
+            for (let i = 0; i < hosts.length; i++) {
+              if (typeof (hosts[i]) === 'string') {
+                let configValue: string | undefined;
+                configValue = this.getConfigValue("ingress.GRAFANA_HOST");
+
+                if (configValue && (configValue !== hosts[i])) {
+                  changes.push({ key: `ingress.hosts[${i}]`, oldValue: hosts[i], newValue: configValue });
+                  hosts[i] = configValue;
+                  ingressUpdated = true;
+                }
+              }
+            }
+          }
+        }
+
+        if (ingressUpdated) {
+          updated = true;
+          // Update the tls section if it exists
+          for (const [ingressKey, ingressValue] of Object.entries(productionYaml.grafana.ingress)) {
             if (ingressValue && typeof ingressValue === 'object' && 'tls' in ingressValue && 'hosts' in ingressValue) {
               const tlsEntries = ingressValue.tls as Array<{ hosts: string[] }>;
               const hosts = ingressValue.hosts as Array<{ host: string }>;
