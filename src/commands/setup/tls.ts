@@ -117,6 +117,98 @@ spec:
       const ingressTypes = ['main', 'websocket']
       let updated = false
 
+
+      /*
+      grafana:
+        ingress:
+          enabled: true
+          annotations:
+            kubernetes.io/ingress.class: "nginx"
+            nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          tls:
+            - secretName: admin-system-dashboard-tls
+              hosts:
+                - grafana.scsdk.unifra.xyz
+          hosts:
+            - grafana.scsdk.unifra.xyz
+      */
+      if (yamlContent.grafana && yamlContent.grafana.ingress) {
+        const originalContent = yaml.dump(yamlContent.grafana.ingress, { lineWidth: -1, noRefs: true })
+        let ingressUpdated = false;
+        let ingress = yamlContent.grafana.ingress;
+        if (!ingress.annotations) {
+          ingress.annotations = {};
+        }
+
+        if (ingress.annotations['cert-manager.io/cluster-issuer'] !== issuer) {
+          ingress.annotations['cert-manager.io/cluster-issuer'] = issuer
+          ingressUpdated = true
+        }
+
+
+        // Update or add TLS configuration
+        if (ingress.hosts && ingress.hosts.length > 0) {
+          const firstHost = ingress.hosts[0];
+          if (typeof firstHost === 'string') {
+            const hostname = firstHost
+            const secretName = `${chart}-grafana-tls`;
+            //const secretName = ingressType === 'main' ? `${chart}-tls` : `${chart}-${ingressType}-tls`
+
+            if (!ingress.tls) {
+              ingress.tls = [{
+                secretName: secretName,
+                hosts: [hostname],
+              }]
+              ingressUpdated = true
+            } else if (ingress.tls.length === 0) {
+              ingress.tls.push({
+                secretName: secretName,
+                hosts: [hostname],
+              })
+              ingressUpdated = true
+            } else {
+              // Update existing TLS configuration
+              ingress.tls.forEach((tlsConfig: any) => {
+                if (!tlsConfig.secretName || tlsConfig.secretName !== secretName) {
+                  tlsConfig.secretName = secretName
+                  ingressUpdated = true
+                }
+                if (!tlsConfig.hosts || !tlsConfig.hosts.includes(hostname)) {
+                  tlsConfig.hosts = [hostname]
+                  ingressUpdated = true
+                }
+              })
+            }
+          }
+        }
+
+        if (ingressUpdated) {
+          updated = true
+          const updatedContent = yaml.dump(ingress, { lineWidth: -1, noRefs: true })
+
+          if (this.debugMode) {
+            this.log(chalk.yellow(`\nProposed changes for ${chart} :`))
+            this.log(chalk.red('- Original content:'))
+            this.log(originalContent)
+            this.log(chalk.green('+ Updated content:'))
+            this.log(updatedContent)
+
+            const confirmUpdate = await confirm({
+              message: chalk.cyan(`Do you want to apply these changes to ${chart}?`),
+            })
+
+            if (!confirmUpdate) {
+              this.log(chalk.yellow(`Skipped updating ${chart}`));
+            }
+          }
+
+          this.log(chalk.green(`Updated TLS configuration for ${chart} `))
+        } else {
+          this.log(chalk.green(`No changes needed for ${chart} ()`))
+        }
+
+      }
+
       for (const ingressType of ingressTypes) {
         if (yamlContent.ingress?.[ingressType]) {
           const originalContent = yaml.dump(yamlContent.ingress[ingressType], { lineWidth: -1, noRefs: true })
@@ -259,6 +351,7 @@ spec:
         'rollup-explorer-backend',
         'l2-rpc',
         'l1-devnet',
+        'scroll-monitor'
       ]
 
       for (const chart of chartsToUpdate) {

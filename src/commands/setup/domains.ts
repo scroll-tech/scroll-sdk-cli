@@ -183,7 +183,9 @@ export default class SetupDomains extends Command {
         ROLLUPSCAN_API_URI: `${protocol}://rollup-explorer-backend.${urlEnding}/api`,
         EXTERNAL_EXPLORER_URI_L2: `${protocol}://blockscout.${urlEnding}`,
         ADMIN_SYSTEM_DASHBOARD_URI: `${protocol}://admin-system-dashboard.${urlEnding}`,
+        GRAFANA_URI: `${protocol}://grafana.${urlEnding}`,
       };
+
 
       if (usesAnvil) {
         domainConfig.EXTERNAL_RPC_URI_L1 = `${protocol}://l1-devnet.${urlEnding}`;
@@ -198,6 +200,7 @@ export default class SetupDomains extends Command {
         RPC_GATEWAY_HOST: `l2-rpc.${urlEnding}`,
         BLOCKSCOUT_HOST: `blockscout.${urlEnding}`,
         ADMIN_SYSTEM_DASHBOARD_HOST: `admin-system-dashboard.${urlEnding}`,
+        GRAFANA_HOST: `grafana.${urlEnding}`,
         ...(usesAnvil ? { L1_DEVNET_HOST: `l1-devnet.${urlEnding}`, L1_EXPLORER_HOST: `l1-explorer.${urlEnding}` } : {}),
       };
     } else {
@@ -239,6 +242,10 @@ export default class SetupDomains extends Command {
           message: 'Enter ADMIN_SYSTEM_DASHBOARD_HOST:',
           default: existingConfig.ingress?.ADMIN_SYSTEM_DASHBOARD_HOST || 'admin-system-dashboard.scrollsdk',
         }),
+        GRAFANA_HOST: await input({
+          message: 'Enter GRAFANA_HOST:',
+          default: existingConfig.ingress?.GRAFANA_HOST || 'grafana.scrollsdk',
+        }),
       };
 
       if (usesAnvil) {
@@ -272,6 +279,10 @@ export default class SetupDomains extends Command {
         ADMIN_SYSTEM_DASHBOARD_URI: await input({
           message: 'Enter ADMIN_SYSTEM_DASHBOARD_URI:',
           default: existingConfig.frontend?.ADMIN_SYSTEM_DASHBOARD_URI || `${protocol}://${ingressConfig.ADMIN_SYSTEM_DASHBOARD_HOST}`,
+        }),
+        GRAFANA_URI: await input({
+          message: 'Enter GRAFANA_URI:',
+          default: existingConfig.frontend?.GRAFANA_URI || `${protocol}://${ingressConfig.GRAFANA_HOST}`,
         }),
       };
 
