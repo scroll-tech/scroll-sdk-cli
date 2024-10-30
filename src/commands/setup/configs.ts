@@ -519,15 +519,35 @@ export default class SetupConfigs extends Command {
       }
     }
 
+    interface ScrollConfig {
+      addresses: { [key: string]: any; confirmation_number?: number }[];
+    }
+    
+    interface ExistingYaml {
+      'kube-prometheus-stack': {
+        additionalPrometheusRules: any;
+      };
+      scrollConfig: string;
+    }
+
     try {
-      this.log(chalk.blue(`generating balance-checker alert rules file...`));
       const scrollMonitorProductionFilePath = path.join(targetDir, "scroll-monitor-production.yaml");
-      const balanceCheckerConfigFilePath = path.join(targetDir, "balance-checker-config.yaml");
-      const addedAlertRules = this.generateAlertRules(balanceCheckerConfigFilePath);
-      const existingContent = fs.readFileSync(scrollMonitorProductionFilePath, 'utf8');
-      const existingYaml = yaml.load(existingContent) as any;
-      existingYaml["kube-prometheus-stack"].additionalPrometheusRules = addedAlertRules;
-      fs.writeFileSync(scrollMonitorProductionFilePath, yaml.dump(existingYaml, { indent: 2 }));
+      const balanceCheckerConfigFilePath = path.join(targetDir, "balance-checker-config.yaml");  
+      this.log(chalk.blue(`generating balance-checker alert rules file...`));
+      const balanceCheckerConfigContent = fs.readFileSync(balanceCheckerConfigFilePath, 'utf8');
+      const parsedYamlBalanceCheckerConfig = yaml.load(balanceCheckerConfigContent) as any;
+      const scrollConfig = JSON.parse(parsedYamlBalanceCheckerConfig.scrollConfig);
+      for (const item of scrollConfig.addresses) {
+        item['confirmation_number'] = 1;
+      }
+
+      const scrollMonitorContent = fs.readFileSync(scrollMonitorProductionFilePath, 'utf8');
+      const parsedYamlScrollMonitor = yaml.load(scrollMonitorContent) as any;
+      const addedAlertRules = this.generateAlertRules(scrollConfig);
+      parsedYamlScrollMonitor["kube-prometheus-stack"].additionalPrometheusRules = addedAlertRules;
+      parsedYamlBalanceCheckerConfig.scrollConfig = JSON.stringify(scrollConfig, null, 2);
+      fs.writeFileSync(balanceCheckerConfigFilePath, yaml.dump(parsedYamlBalanceCheckerConfig, { indent: 2 }));
+      fs.writeFileSync(scrollMonitorProductionFilePath, yaml.dump(parsedYamlScrollMonitor, { indent: 2 }));
     }
     catch {
       this.error(`generating balance-checker alert rules file failed`);
@@ -720,12 +740,8 @@ export default class SetupConfigs extends Command {
     this.log(chalk.green('Configuration setup completed.'))
   }
 
-  private generateAlertRules(sourcePath: string): any {
-    const yamlContent = fs.readFileSync(sourcePath, 'utf8');
-    const parsedYaml = yaml.load(yamlContent) as any;
-    const jsonConfig = JSON.parse(parsedYaml.scrollConfig);
+  private generateAlertRules(jsonConfig: { addresses: any; }) {
     const { addresses } = jsonConfig;
-
     const alertRules =
       [
         {
