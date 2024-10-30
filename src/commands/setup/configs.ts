@@ -525,7 +525,7 @@ export default class SetupConfigs extends Command {
       const balanceCheckerConfigFilePath = path.join(targetDir, "balance-checker-config.yaml");
       const addedAlertRules = this.generateAlertRules(balanceCheckerConfigFilePath);
       const existingContent = fs.readFileSync(scrollMonitorProductionFilePath, 'utf8');
-      const existingYaml = yaml.load(existingContent) as any;
+      const existingYaml = yaml.load(existingContent) as any;      
       existingYaml["kube-prometheus-stack"].additionalPrometheusRules = addedAlertRules;
       fs.writeFileSync(scrollMonitorProductionFilePath, yaml.dump(existingYaml, { indent: 2 }));
     }
