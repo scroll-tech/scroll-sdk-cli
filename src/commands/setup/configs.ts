@@ -14,7 +14,7 @@ export default class SetupConfigs extends Command {
 
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
-    '<%= config.bin %> <%= command.id %> --image-tag v0.0.25',
+    '<%= config.bin %> <%= command.id %> --image-tag gen-configs-2eba3d2c418b16f4a66d9baadeb1c1bafdca81b1',
     '<%= config.bin %> <%= command.id %> --configs-dir custom-configs',
   ]
 
@@ -427,7 +427,7 @@ export default class SetupConfigs extends Command {
   }
 
   private async getDockerImageTag(providedTag: string | undefined): Promise<string> {
-    const defaultTag = 'gen-configs-v0.0.25';
+    const defaultTag = 'gen-configs-2eba3d2c418b16f4a66d9baadeb1c1bafdca81b1';
 
     if (!providedTag) {
       return defaultTag;

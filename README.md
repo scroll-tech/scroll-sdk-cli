@@ -509,7 +509,7 @@ DESCRIPTION
 EXAMPLES
   $ scrollsdk setup configs
 
-  $ scrollsdk setup configs --image-tag v0.0.25
+  $ scrollsdk setup configs --image-tag gen-configs-2eba3d2c418b16f4a66d9baadeb1c1bafdca81b1
 
   $ scrollsdk setup configs --configs-dir custom-configs
 ```
