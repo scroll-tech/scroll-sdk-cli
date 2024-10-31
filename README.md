@@ -1,7 +1,15 @@
-scroll-sdk-cli
-=================
+# Scroll SDK CLI
+[![Twitter Follow](https://img.shields.io/twitter/follow/Scroll_ZKP?style=social)](https://twitter.com/Scroll_ZKP)
+[![Discord](https://img.shields.io/discord/984015101017346058?color=%235865F2&label=Discord&logo=discord&logoColor=%23fff)](https://discord.gg/scroll)
 
-A tool for managing and testing Scroll SDK deployments
+## Introduction
+
+A tool for configuring, managing, and testing [Scroll SDK](https://docs.scroll.io/en/sdk/) deployments.
+
+### Other Scroll SDK Repos
+
+- [Scroll SDK](https://www.github.com/scroll-tech/scroll-sdk)
+- [Scroll Proving SDK](https://www.github.com/scroll-tech/scroll-proving-sdk)
 
 
 [![oclif](https://img.shields.io/badge/cli-oclif-brightgreen.svg)](https://oclif.io)
@@ -29,34 +37,39 @@ USAGE
 <!-- usagestop -->
 # Commands
 <!-- commands -->
-* [`scrollsdk help [COMMAND]`](#scrollsdk-help-command)
-* [`scrollsdk helper activity`](#scrollsdk-helper-activity)
-* [`scrollsdk helper clear-accounts`](#scrollsdk-helper-clear-accounts)
-* [`scrollsdk helper derive-enode NODEKEY`](#scrollsdk-helper-derive-enode-nodekey)
-* [`scrollsdk helper fund-accounts`](#scrollsdk-helper-fund-accounts)
-* [`scrollsdk helper set-scalars`](#scrollsdk-helper-set-scalars)
-* [`scrollsdk plugins`](#scrollsdk-plugins)
-* [`scrollsdk plugins add PLUGIN`](#scrollsdk-plugins-add-plugin)
-* [`scrollsdk plugins:inspect PLUGIN...`](#scrollsdk-pluginsinspect-plugin)
-* [`scrollsdk plugins install PLUGIN`](#scrollsdk-plugins-install-plugin)
-* [`scrollsdk plugins link PATH`](#scrollsdk-plugins-link-path)
-* [`scrollsdk plugins remove [PLUGIN]`](#scrollsdk-plugins-remove-plugin)
-* [`scrollsdk plugins reset`](#scrollsdk-plugins-reset)
-* [`scrollsdk plugins uninstall [PLUGIN]`](#scrollsdk-plugins-uninstall-plugin)
-* [`scrollsdk plugins unlink [PLUGIN]`](#scrollsdk-plugins-unlink-plugin)
-* [`scrollsdk plugins update`](#scrollsdk-plugins-update)
-* [`scrollsdk setup configs`](#scrollsdk-setup-configs)
-* [`scrollsdk setup db-init`](#scrollsdk-setup-db-init)
-* [`scrollsdk setup domains [FILE]`](#scrollsdk-setup-domains-file)
-* [`scrollsdk setup gas-token`](#scrollsdk-setup-gas-token)
-* [`scrollsdk setup gen-keystore`](#scrollsdk-setup-gen-keystore)
-* [`scrollsdk setup prep-charts`](#scrollsdk-setup-prep-charts)
-* [`scrollsdk setup push-secrets`](#scrollsdk-setup-push-secrets)
-* [`scrollsdk setup tls`](#scrollsdk-setup-tls)
-* [`scrollsdk test contracts`](#scrollsdk-test-contracts)
-* [`scrollsdk test dependencies`](#scrollsdk-test-dependencies)
-* [`scrollsdk test e2e`](#scrollsdk-test-e2e)
-* [`scrollsdk test ingress`](#scrollsdk-test-ingress)
+- [Scroll SDK CLI](#scroll-sdk-cli)
+  - [Introduction](#introduction)
+    - [Other Scroll SDK Repos](#other-scroll-sdk-repos)
+- [Usage](#usage)
+- [Commands](#commands)
+  - [`scrollsdk help [COMMAND]`](#scrollsdk-help-command)
+  - [`scrollsdk helper activity`](#scrollsdk-helper-activity)
+  - [`scrollsdk helper clear-accounts`](#scrollsdk-helper-clear-accounts)
+  - [`scrollsdk helper derive-enode NODEKEY`](#scrollsdk-helper-derive-enode-nodekey)
+  - [`scrollsdk helper fund-accounts`](#scrollsdk-helper-fund-accounts)
+  - [`scrollsdk helper set-scalars`](#scrollsdk-helper-set-scalars)
+  - [`scrollsdk plugins`](#scrollsdk-plugins)
+  - [`scrollsdk plugins add PLUGIN`](#scrollsdk-plugins-add-plugin)
+  - [`scrollsdk plugins:inspect PLUGIN...`](#scrollsdk-pluginsinspect-plugin)
+  - [`scrollsdk plugins install PLUGIN`](#scrollsdk-plugins-install-plugin)
+  - [`scrollsdk plugins link PATH`](#scrollsdk-plugins-link-path)
+  - [`scrollsdk plugins remove [PLUGIN]`](#scrollsdk-plugins-remove-plugin)
+  - [`scrollsdk plugins reset`](#scrollsdk-plugins-reset)
+  - [`scrollsdk plugins uninstall [PLUGIN]`](#scrollsdk-plugins-uninstall-plugin)
+  - [`scrollsdk plugins unlink [PLUGIN]`](#scrollsdk-plugins-unlink-plugin)
+  - [`scrollsdk plugins update`](#scrollsdk-plugins-update)
+  - [`scrollsdk setup configs`](#scrollsdk-setup-configs)
+  - [`scrollsdk setup db-init`](#scrollsdk-setup-db-init)
+  - [`scrollsdk setup domains [FILE]`](#scrollsdk-setup-domains-file)
+  - [`scrollsdk setup gas-token`](#scrollsdk-setup-gas-token)
+  - [`scrollsdk setup gen-keystore`](#scrollsdk-setup-gen-keystore)
+  - [`scrollsdk setup prep-charts`](#scrollsdk-setup-prep-charts)
+  - [`scrollsdk setup push-secrets`](#scrollsdk-setup-push-secrets)
+  - [`scrollsdk setup tls`](#scrollsdk-setup-tls)
+  - [`scrollsdk test contracts`](#scrollsdk-test-contracts)
+  - [`scrollsdk test dependencies`](#scrollsdk-test-dependencies)
+  - [`scrollsdk test e2e`](#scrollsdk-test-e2e)
+  - [`scrollsdk test ingress`](#scrollsdk-test-ingress)
 
 ## `scrollsdk help [COMMAND]`
 
