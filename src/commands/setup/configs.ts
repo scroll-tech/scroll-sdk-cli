@@ -14,7 +14,7 @@ export default class SetupConfigs extends Command {
 
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
-    '<%= config.bin %> <%= command.id %> --image-tag v0.0.25',
+    '<%= config.bin %> <%= command.id %> --image-tag gen-configs-2eba3d2c418b16f4a66d9baadeb1c1bafdca81b1',
     '<%= config.bin %> <%= command.id %> --configs-dir custom-configs',
   ]
 
@@ -427,7 +427,7 @@ export default class SetupConfigs extends Command {
   }
 
   private async getDockerImageTag(providedTag: string | undefined): Promise<string> {
-    const defaultTag = 'gen-configs-v0.0.25';
+    const defaultTag = 'gen-configs-2eba3d2c418b16f4a66d9baadeb1c1bafdca81b1';
 
     if (!providedTag) {
       return defaultTag;
@@ -517,6 +517,20 @@ export default class SetupConfigs extends Command {
       } else {
         this.log(chalk.yellow(`Source file not found: ${mapping.source}`));
       }
+    }
+
+    try {
+      this.log(chalk.blue(`generating balance-checker alert rules file...`));
+      const scrollMonitorProductionFilePath = path.join(targetDir, "scroll-monitor-production.yaml");
+      const balanceCheckerConfigFilePath = path.join(targetDir, "balance-checker-config.yaml");
+      const addedAlertRules = this.generateAlertRules(balanceCheckerConfigFilePath);
+      const existingContent = fs.readFileSync(scrollMonitorProductionFilePath, 'utf8');
+      const existingYaml = yaml.load(existingContent) as any;      
+      existingYaml["kube-prometheus-stack"].additionalPrometheusRules = addedAlertRules;
+      fs.writeFileSync(scrollMonitorProductionFilePath, yaml.dump(existingYaml, { indent: 2 }));
+    }
+    catch {
+      this.error(`generating balance-checker alert rules file failed`);
     }
 
     // Remove source files after all processing is complete
@@ -705,4 +719,40 @@ export default class SetupConfigs extends Command {
 
     this.log(chalk.green('Configuration setup completed.'))
   }
+
+  private generateAlertRules(sourcePath: string): any {
+    const yamlContent = fs.readFileSync(sourcePath, 'utf8');
+    const parsedYaml = yaml.load(yamlContent) as any;
+    const jsonConfig = JSON.parse(parsedYaml.scrollConfig);
+    const { addresses } = jsonConfig;
+
+    const alertRules =
+      [
+        {
+          groups: [
+            {
+              name: "balance-cheker-group",
+              rules: addresses.map((item: { address: string, min_balance_ether: string; name: string; rpc_url: string }) => ({
+                alert: `ether_balance_of_${item.name}`,
+                annotations: {
+                  description: `Balance of ${item.name} (${item.address}) is less than threshold ${item.min_balance_ether}`,
+                  summary: `Balance of ${item.name} is less than threshold ${item.min_balance_ether}`
+                },
+                expr: `ether_balance_of_${item.name} < ${item.min_balance_ether}`,
+                for: '5m',
+                labels: {
+                  severity: 'critical'
+                }
+              }))
+            }],
+          labels: {
+            release: "scroll-monitor",
+            role: "alert-rules"
+          },
+          name: "balance-cheker"
+        }
+      ];
+    return alertRules;
+  }
+
 }
