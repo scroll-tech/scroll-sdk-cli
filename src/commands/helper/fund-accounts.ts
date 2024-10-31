@@ -166,11 +166,11 @@ export default class HelperFundAccounts extends Command {
       const l1Addresses: Record<string, string> = {
         L1_COMMIT_SENDER: config.accounts.L1_COMMIT_SENDER_ADDR,
         L1_FINALIZE_SENDER: config.accounts.L1_FINALIZE_SENDER_ADDR,
-        L2_GAS_ORACLE_SENDER: config.accounts.L2_GAS_ORACLE_SENDER_ADDR,
+        L1_GAS_ORACLE_SENDER: config.accounts.L1_GAS_ORACLE_SENDER_ADDR,
       }
 
       const l2Addresses: Record<string, string> = {
-        L1_GAS_ORACLE_SENDER: config.accounts.L1_GAS_ORACLE_SENDER_ADDR,
+        L2_GAS_ORACLE_SENDER: config.accounts.L2_GAS_ORACLE_SENDER_ADDR,
       }
 
       if (flags.account) {
