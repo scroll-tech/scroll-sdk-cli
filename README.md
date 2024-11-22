@@ -67,6 +67,7 @@ USAGE
   - [`scrollsdk setup prep-charts`](#scrollsdk-setup-prep-charts)
   - [`scrollsdk setup push-secrets`](#scrollsdk-setup-push-secrets)
   - [`scrollsdk setup tls`](#scrollsdk-setup-tls)
+  - [`scrollsdk setup verify-contracts`](#scrollsdk-setup-verify-contracts)
   - [`scrollsdk test contracts`](#scrollsdk-test-contracts)
   - [`scrollsdk test dependencies`](#scrollsdk-test-dependencies)
   - [`scrollsdk test e2e`](#scrollsdk-test-e2e)
@@ -523,7 +524,7 @@ DESCRIPTION
 EXAMPLES
   $ scrollsdk setup configs
 
-  $ scrollsdk setup configs --image-tag gen-configs-2eba3d2c418b16f4a66d9baadeb1c1bafdca81b1
+  $ scrollsdk setup configs --image-tag gen-configs-8ff2948aa2b9cbd24a7644b060097765a6faee10
 
   $ scrollsdk setup configs --configs-dir custom-configs
 ```
@@ -703,6 +704,29 @@ EXAMPLES
 ```
 
 _See code: [src/commands/setup/tls.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.1.0/src/commands/setup/tls.ts)_
+
+## `scrollsdk setup verify-contracts`
+
+Verify both L1/L2 contracts scource code on block chain explorer
+
+```
+USAGE
+  $ scrollsdk setup verify-contracts [--image-tag <value>]
+
+FLAGS
+  --image-tag=<value>    Specify the Docker image tag to use
+
+DESCRIPTION
+  Verify both L1/L2 contracts scource code on block chain explorer
+
+EXAMPLES
+  $ scrollsdk setup verify-contracts
+
+  $ scrollsdk setup verify-contracts --image-tag verify-8ff2948aa2b9cbd24a7644b060097765a6faee10
+```
+
+_See code: [src/commands/setup/configs.ts](https://github.com/scroll-tech/scroll-sdk-cli/blob/v0.1.0/src/commands/setup/verify-contracts.ts)_
+
 
 ## `scrollsdk test contracts`
 
