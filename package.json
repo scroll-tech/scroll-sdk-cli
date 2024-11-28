@@ -1,7 +1,7 @@
 {
   "name": "@scroll-tech/scroll-sdk-cli",
   "description": "A tool for managing and testing Scroll SDK deployments",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": "Daniel Helm",
   "bin": {
     "scrollsdk": "bin/run.js"
